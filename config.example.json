@@ -1,0 +1,51 @@
+{
+  "stateDir": "./state",
+  "listen": {
+    "address": "127.0.0.1",
+    "port": 9080
+  },
+  "web": {
+    "enabled": true,
+    "publicDir": "./public",
+    "backgroundWorkers": 2,
+    "maxConnections": 128,
+    "ioTimeoutMs": 30000,
+    "maxBodyBytes": 65536,
+    "maxUploadBytes": 67108864,
+    "maxStaticFileBytes": 4194304
+  },
+  "status": {
+    "enabled": true,
+    "intervalMs": 30000,
+    "timeoutMs": 5000
+  },
+  "calls": {
+    "defaultTimeoutMs": 30000
+  },
+  "runtimeStartTimeoutMs": 10000,
+  "events": {
+    "enabled": true,
+    "capacity": 256
+  },
+  "auth": {
+    "enabled": false,
+    "username": "admin",
+    "passwordHash": "",
+    "sessionIdleTimeoutMs": 1800000,
+    "sessionMaxLifetimeMs": 86400000,
+    "maxSessions": 64,
+    "secureCookie": false
+  },
+  "endpoints": {
+    "enabled": true,
+    "maxSessions": 128,
+    "maxSessionsPerPackage": 32,
+    "maxRequestBodyBytes": 1048576,
+    "maxResponseBodyBytes": 4194304,
+    "maxMessageBytes": 262144,
+    "maxQueuedMessages": 64,
+    "maxQueuedBytes": 1048576,
+    "idleTimeoutMs": 60000,
+    "maxLifetimeMs": 86400000
+  }
+}

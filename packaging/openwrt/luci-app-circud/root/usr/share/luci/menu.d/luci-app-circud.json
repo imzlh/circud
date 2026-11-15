@@ -1,0 +1,27 @@
+{
+	"admin/services/circud": {
+		"title": "circud",
+		"order": 55,
+		"action": {
+			"type": "view",
+			"path": "circud/overview"
+		},
+		"depends": {
+			"acl": [ "luci-app-circud" ],
+			"fs": { "/usr/bin/circud": "executable" }
+		}
+	},
+
+	"admin/services/circud/web": {
+		"action": {
+			"type": "function",
+			"module": "luci.controller.circud",
+			"function": "proxy"
+		},
+		"wildcard": true,
+		"depends": {
+			"acl": [ "luci-app-circud" ]
+		},
+		"firstchild_ineligible": true
+	}
+}

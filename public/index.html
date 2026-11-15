@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>circud 管理</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="circud 首页">
+      <span class="brand-mark" aria-hidden="true">C</span>
+      <span><strong>circud</strong><small id="brandMeta">Linux 管理框架</small></span>
+    </a>
+    <div class="topbar-actions">
+      <div class="connection" id="connection" data-state="loading">
+        <span class="connection-dot" aria-hidden="true"></span>
+        <span id="connectionText">正在检查会话</span>
+      </div>
+      <div class="account" id="account" hidden>
+        <span id="accountName"></span>
+        <button class="text-button account-logout" id="logoutButton" type="button">退出</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="auth-main" id="authView" aria-labelledby="loginTitle">
+    <section class="login-card">
+      <p class="eyebrow">ADMIN SIGN IN</p>
+      <h1 id="loginTitle">登录 circud</h1>
+      <p class="login-copy" id="authStatus">正在确认当前登录状态…</p>
+      <form class="login-form" id="loginForm" hidden>
+        <label class="login-field">
+          <span>用户名</span>
+          <input id="loginUsername" name="username" type="text"
+                 autocomplete="username" autocapitalize="none"
+                 spellcheck="false" maxlength="128" required>
+        </label>
+        <label class="login-field">
+          <span>密码</span>
+          <input id="loginPassword" name="password" type="password"
+                 autocomplete="current-password" maxlength="4096" required>
+        </label>
+        <div class="dialog-error" id="loginError" role="alert" hidden></div>
+        <button class="button button-primary login-submit" id="loginButton" type="submit">
+          登录
+        </button>
+      </form>
+      <button class="button auth-retry" id="authRetryButton" type="button" hidden>
+        重新连接
+      </button>
+      <p class="login-note">登录状态由 HttpOnly Cookie 维护；本页面不会把密码或 CSRF 令牌写入 Web Storage。</p>
+    </section>
+  </main>
+
+  <main id="managementApp" hidden>
+    <section class="hero">
+      <div>
+        <p class="eyebrow">PACKAGE CONTROL</p>
+        <h1>服务一目了然，<br><span>操作保持克制。</span></h1>
+        <p class="hero-copy">查看运行状态，控制软件包生命周期，并在需要时获取最新状态快照。</p>
+      </div>
+      <div class="summary" aria-label="软件包摘要">
+        <div><strong id="packageCount">—</strong><span>软件包</span></div>
+        <div><strong id="runningCount">—</strong><span>运行中</span></div>
+        <div><strong id="attentionCount">—</strong><span>需关注</span></div>
+      </div>
+    </section>
+
+    <section class="toolbar" aria-label="软件包工具栏">
+      <label class="search">
+        <span class="sr-only">搜索软件包</span>
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg>
+        <input id="searchInput" type="search" autocomplete="off" placeholder="按名称或 ID 搜索">
+      </label>
+      <button class="button" id="installButton" type="button">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12m-4-4 4 4 4-4M5 20h14"/></svg>
+        安装 ZIP
+      </button>
+      <button class="button button-primary" id="refreshButton" type="button">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/></svg>
+        刷新列表
+      </button>
+    </section>
+
+    <section aria-labelledby="packagesTitle">
+      <div class="section-heading">
+        <div><p class="eyebrow">INSTALLED</p><h2 id="packagesTitle">已安装软件包</h2></div>
+        <p id="lastUpdated">尚未更新</p>
+      </div>
+      <div class="notice" id="notice" role="status" hidden></div>
+      <div class="package-grid" id="packageGrid" aria-live="polite"></div>
+      <div class="empty" id="emptyState" hidden>
+        <span aria-hidden="true">◇</span>
+        <h3>没有找到软件包</h3>
+        <p>安装软件包后，它会出现在这里。</p>
+      </div>
+    </section>
+
+    <section class="activity-section" aria-labelledby="activityTitle">
+      <div class="section-heading activity-heading">
+        <div><p class="eyebrow">ACTIVITY</p><h2 id="activityTitle">最近活动</h2></div>
+        <p id="activityUpdated">等待事件</p>
+      </div>
+      <div class="activity-toolbar" aria-label="活动筛选">
+        <label>
+          <span>级别</span>
+          <select id="eventLevelFilter">
+            <option value="">全部</option>
+            <option value="info">信息</option>
+            <option value="warning">警告</option>
+            <option value="error">错误</option>
+          </select>
+        </label>
+        <label>
+          <span>类别</span>
+          <select id="eventCategoryFilter">
+            <option value="">全部</option>
+            <option value="daemon">守护进程</option>
+            <option value="package">软件包</option>
+            <option value="lifecycle">生命周期</option>
+            <option value="rpc">RPC</option>
+            <option value="status">状态</option>
+          </select>
+        </label>
+        <label class="activity-package-filter">
+          <span>软件包</span>
+          <select id="eventPackageFilter">
+            <option value="">全部</option>
+          </select>
+        </label>
+        <div class="activity-controls">
+          <button class="button" id="pauseEventsButton" type="button">暂停</button>
+          <button class="button" id="clearEventsButton" type="button">清空视图</button>
+        </div>
+      </div>
+      <div class="activity-note" id="activityNote" role="status" hidden></div>
+      <ol class="event-list" id="eventList" aria-live="polite"></ol>
+      <div class="empty event-empty" id="eventEmpty">
+        <span aria-hidden="true">◎</span>
+        <h3>暂无活动</h3>
+        <p>安装、生命周期、状态和失败的 RPC 事件会显示在这里。</p>
+      </div>
+    </section>
+  </main>
+
+  <template id="packageTemplate">
+    <article class="package-card">
+      <div class="package-card-head">
+        <div class="package-icon" aria-hidden="true"></div>
+        <div class="package-title"><h3></h3><p class="package-id"></p></div>
+        <span class="badge"></span>
+      </div>
+      <p class="runtime-message"></p>
+      <dl>
+        <div><dt>版本</dt><dd class="version"></dd></div>
+        <div><dt>运行状态</dt><dd class="runtime-state"></dd></div>
+      </dl>
+      <div class="package-actions">
+        <button class="button action-primary" data-action="call" type="button">RPC 调用</button>
+        <button class="button action-primary" data-action="start" type="button">启动</button>
+        <button class="button" data-action="stop" type="button">停止</button>
+        <button class="button" data-action="reload" type="button">重载</button>
+        <button class="button danger-button" data-action="remove" type="button">卸载</button>
+        <button class="button icon-button" data-action="status" type="button" title="刷新状态" aria-label="刷新状态">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/></svg>
+        </button>
+      </div>
+    </article>
+  </template>
+
+  <dialog class="install-dialog" id="installDialog" aria-labelledby="installTitle">
+    <form method="dialog" class="dialog-shell" id="installForm">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">PACKAGE INSTALL</p><h2 id="installTitle">安装 ZIP 软件包</h2></div>
+        <button class="dialog-close" value="cancel" aria-label="关闭" type="submit">×</button>
+      </div>
+      <p class="dialog-copy">软件包会先完整上传并验证，验证成功后才替换当前运行代际。包数据不会被覆盖。</p>
+      <label class="drop-zone" id="dropZone">
+        <input id="packageFile" type="file" accept=".zip,application/zip,application/x-zip-compressed">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 16V4m-4 4 4-4 4 4M5 14v5h14v-5"/></svg>
+        <strong>选择 ZIP，或拖到这里</strong>
+        <span id="uploadHint">正在读取服务端上传限制…</span>
+      </label>
+      <div class="selected-file" id="selectedFile" hidden>
+        <div><strong id="selectedFileName"></strong><span id="selectedFileSize"></span></div>
+        <button class="button" id="clearFileButton" type="button">重新选择</button>
+      </div>
+      <div class="dialog-error" id="installError" role="alert" hidden></div>
+      <div class="dialog-actions">
+        <button class="button" value="cancel" type="submit">取消</button>
+        <button class="button button-primary" id="confirmInstallButton" type="button" disabled>上传并安装</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="install-dialog" id="removeDialog" aria-labelledby="removeTitle">
+    <form method="dialog" class="dialog-shell" id="removeForm">
+      <div class="dialog-heading">
+        <div><p class="eyebrow danger-eyebrow">PACKAGE REMOVE</p><h2 id="removeTitle">卸载软件包</h2></div>
+        <button class="dialog-close" value="cancel" aria-label="关闭" type="submit">×</button>
+      </div>
+      <p class="dialog-copy">将停止并移除 <strong id="removePackageName"></strong>。默认保留软件包数据，之后重新安装仍可继续使用。</p>
+      <label class="purge-option">
+        <input id="purgeDataInput" type="checkbox">
+        <span><strong>同时清除数据目录</strong><small>这会永久删除软件包保存的配置和状态，无法恢复。</small></span>
+      </label>
+      <div class="dialog-error" id="removeError" role="alert" hidden></div>
+      <div class="dialog-actions">
+        <button class="button" value="cancel" type="submit">取消</button>
+        <button class="button danger-confirm" id="confirmRemoveButton" type="button">确认卸载</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="install-dialog rpc-dialog" id="rpcDialog" aria-labelledby="rpcTitle">
+    <form method="dialog" class="dialog-shell" id="rpcForm">
+      <div class="dialog-heading">
+        <div><p class="eyebrow">PACKAGE RPC</p><h2 id="rpcTitle">调用软件包</h2></div>
+        <button class="dialog-close" value="cancel" aria-label="关闭" type="submit">×</button>
+      </div>
+      <p class="dialog-copy">通过 circud RPC 和 EvBus 调用 <strong id="rpcPackageName"></strong>。参数和返回值必须是 JSON。</p>
+      <div class="form-grid">
+        <label class="field-label">
+          <span>Target</span>
+          <input id="rpcTarget" type="text" autocomplete="off" spellcheck="false" placeholder="例如 status.get" required>
+        </label>
+        <label class="field-label timeout-field">
+          <span>超时（毫秒）</span>
+          <input id="rpcTimeout" type="number" min="1" max="300000" step="1" value="30000" required>
+        </label>
+      </div>
+      <label class="field-label">
+        <span>Arguments</span>
+        <textarea id="rpcArguments" rows="7" spellcheck="false">{}</textarea>
+      </label>
+      <div class="dialog-error" id="rpcError" role="alert" hidden></div>
+      <div class="rpc-result" id="rpcResult" hidden>
+        <div><span>返回结果</span><button class="text-button" id="copyRpcResult" type="button">复制</button></div>
+        <pre id="rpcResultOutput"></pre>
+      </div>
+      <div class="dialog-actions">
+        <button class="button" value="cancel" type="submit">关闭</button>
+        <button class="button button-primary" id="confirmRpcButton" type="button">发送调用</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

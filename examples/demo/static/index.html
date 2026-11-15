@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>circud endpoint demo</title>
+  <style>
+    :root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; }
+    body { margin: 3rem auto; max-width: 46rem; padding: 0 1rem; }
+    button, input { font: inherit; }
+    pre { min-height: 8rem; overflow: auto; padding: 1rem; background: #7772; }
+  </style>
+</head>
+<body>
+  <h1>circud package endpoint demo</h1>
+  <p>
+    This file was served only after the package called
+    <code>event.serveStatic('static/index.html')</code>.
+  </p>
+  <p>
+    <a href="/io.circud.demo/hello?from=page">Ordinary HTTP/JSON</a>
+    · <a href="/io.circud.demo/events">SSE stream</a>
+  </p>
+  <form id="echo">
+    <label>WebSocket echo <input id="message" value="hello"></label>
+    <button>Send</button>
+  </form>
+  <pre id="log">The WebSocket opens when you send a message.</pre>
+  <script>
+    const form = document.querySelector('#echo');
+    const message = document.querySelector('#message');
+    const log = document.querySelector('#log');
+    let socket;
+
+    form.addEventListener('submit', event => {
+      event.preventDefault();
+      const send = () => {
+        log.textContent += `\n> ${message.value}`;
+        socket.send(message.value);
+      };
+
+      if (socket?.readyState === WebSocket.OPEN) return send();
+      const target = new URL('/io.circud.demo/ws', document.baseURI);
+      target.protocol = target.protocol === 'https:' ? 'wss:' : 'ws:';
+      socket = new WebSocket(target);
+      socket.addEventListener('open', send, { once: true });
+      socket.addEventListener('message', reply => {
+        log.textContent += `\n< ${reply.data}`;
+      });
+      socket.addEventListener('close', reply => {
+        log.textContent += `\n[closed: ${reply.code}]`;
+      });
+    });
+  </script>
+</body>
+</html>

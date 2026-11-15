@@ -1,0 +1,18 @@
+{
+	"luci-app-circud": {
+		"description": "Grant access to circud service and configuration management",
+		"read": {
+			"ubus": {
+				"luci.circud": [ "status", "read_config" ]
+			}
+		},
+		"write": {
+			"ubus": {
+				"luci.circud": [
+					"read_config_private", "write_config", "hash_password", "service_action",
+					"proxy_access"
+				]
+			}
+		}
+	}
+}

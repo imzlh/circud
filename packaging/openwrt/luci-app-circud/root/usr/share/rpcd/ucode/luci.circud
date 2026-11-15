@@ -1,0 +1,250 @@
+#!/usr/bin/env ucode
+'use strict';
+
+import {
+	access, chmod, mkdir, mkstemp, open, popen, readfile, rename,
+	stat, unlink
+} from 'fs';
+import { init_enabled } from 'luci.sys';
+import { connect } from 'ubus';
+
+const CONFIG_DIR = '/etc/circud';
+const CONFIG_PATH = CONFIG_DIR + '/config.json';
+const MAX_CONFIG_BYTES = 256 * 1024;
+const MAX_PASSWORD_BYTES = 1024;
+const SERVICE_ACTIONS = [ 'start', 'stop', 'restart', 'enable', 'disable' ];
+
+function running() {
+	let service = connect()?.call('service', 'list', { name: 'circud' });
+	for (let name, instance in service?.circud?.instances)
+		if (instance.running === true)
+			return true;
+
+	return false;
+}
+
+function process(command) {
+	let child = popen(command, 'r');
+	if (!child)
+		return { code: -1, output: 'unable to execute command' };
+
+	let output = child.read('all') || '';
+	return { code: child.close(), output };
+}
+
+function read_config(redact_private) {
+	let content = readfile(CONFIG_PATH, MAX_CONFIG_BYTES + 1);
+
+	if (content == null)
+		return { content: '', exists: false };
+
+	if (length(content) > MAX_CONFIG_BYTES)
+		return { content: '', exists: true, error: 'configuration exceeds 256 KiB' };
+	if (redact_private) {
+		let config;
+		try {
+			config = json(content);
+		}
+		catch (error) {
+			return {
+				content: '',
+				exists: true,
+				error: 'invalid configuration cannot be shown with read-only access'
+			};
+		}
+		if (type(config) != 'object' ||
+			(config.auth != null && type(config.auth) != 'object'))
+			return {
+				content: '',
+				exists: true,
+				error: 'invalid authentication configuration'
+			};
+		if (type(config.auth?.passwordHash) == 'string' &&
+			length(config.auth.passwordHash))
+			config.auth.passwordHash = '<redacted>';
+		content = sprintf('%J\n', config);
+	}
+
+	return { content, exists: true };
+}
+
+function write_config(request) {
+	let content = request.args.content;
+	if (type(content) != 'string')
+		return { success: false, error: 'content must be a string' };
+	if (length(content) == 0)
+		return { success: false, error: 'configuration must not be empty' };
+	if (length(content) > MAX_CONFIG_BYTES)
+		return { success: false, error: 'configuration exceeds 256 KiB' };
+
+	if (!access(CONFIG_DIR))
+		mkdir(CONFIG_DIR, 0o755);
+
+	let temp_path = CONFIG_DIR + '/.config.json.' +
+		hexenc(readfile('/dev/urandom', 16));
+	let temp_file = open(temp_path, 'wx', 0o600);
+	if (!temp_file)
+		return { success: false, error: 'unable to create temporary configuration' };
+
+	let result = { success: false, error: 'configuration validation failed' };
+
+	try {
+		let written = temp_file.write(content);
+		temp_file.close();
+		temp_file = null;
+		if (written != length(content)) {
+			result.error = 'unable to write complete temporary configuration';
+		}
+		else {
+			chmod(temp_path, 0o600);
+			// temp_path contains only our fixed prefix and hex-encoded random bytes.
+			let check = process(sprintf(
+				'/usr/bin/circud --config %s --check-config 2>&1', temp_path));
+			if (check.code != 0) {
+				result.error = trim(check.output) ||
+					'circud rejected the configuration';
+			}
+			else if (!rename(temp_path, CONFIG_PATH)) {
+				result.error = 'unable to replace active configuration';
+			}
+			else {
+				chmod(CONFIG_PATH, 0o600);
+				result = { success: true };
+			}
+		}
+	}
+	catch (error) {
+		result = { success: false, error: '' + error };
+	}
+
+	if (temp_file)
+		temp_file.close();
+	unlink(temp_path);
+
+	return result;
+}
+
+function hash_password(request) {
+	let password = request.args.password;
+	if (type(password) != 'string')
+		return { success: false, error: 'password must be a string' };
+	if (length(password) < 1 || length(password) > MAX_PASSWORD_BYTES)
+		return { success: false, error: 'password must contain 1..1024 bytes' };
+	if (index(password, '\x00') >= 0 || index(password, '\r') >= 0 ||
+		index(password, '\n') >= 0)
+		return { success: false, error: 'password must be a single line' };
+
+	// circud intentionally accepts password input only from a TTY. Keep both
+	// copies in an already-unlinked mkstemp() descriptor, delay feeding them
+	// until circud has applied TCSAFLUSH, and never place the secret in argv,
+	// a shell command, a named file, or command output.
+	let input = mkstemp('circud-password');
+	if (!input)
+		return { success: false, error: 'unable to create password input' };
+
+	let result = { success: false, error: 'password hashing failed' };
+	try {
+		if (input.write(password + '\n' + password + '\n') !=
+			length(password) * 2 + 2 || !input.flush() || input.seek(0) == null)
+			die('unable to prepare password input');
+
+		let descriptor = input.fileno();
+		if (descriptor == null || descriptor < 3)
+			die('unable to access password input');
+
+		let child = popen(sprintf(
+			'{ /bin/sleep 1; /bin/cat <&%d; } | ' +
+			'/usr/bin/script -q -e -E never ' +
+			"-c '/usr/bin/circud hash-password' /dev/null 2>&1",
+			descriptor), 'r');
+		if (!child)
+			die('unable to start password hashing');
+
+		let output = child.read(16 * 1024 + 1) || '';
+		let code = child.close();
+		if (length(output) > 16 * 1024)
+			die('circud password hashing output is too large');
+		if (code != 0)
+			die('circud rejected the password');
+
+		let hash = null;
+		for (let line in split(replace(output, '\r\n', '\n'), '\n')) {
+			line = trim(line);
+			if (match(line,
+				/^\$circud-scrypt\$v=1\$ln=[0-9]+,r=[0-9]+,p=[0-9]+\$[A-Za-z0-9_-]+\$[A-Za-z0-9_-]+$/)) {
+				if (hash != null)
+					die('circud returned multiple password hashes');
+				hash = line;
+			}
+		}
+		if (hash == null)
+			die('circud did not return a password hash');
+
+		result = { success: true, hash };
+	}
+	catch (error) {
+		result = { success: false, error: '' + error };
+	}
+
+	input.truncate(0);
+	input.close();
+	return result;
+}
+
+function service_action(request) {
+	let action = request.args.action;
+	if (index(SERVICE_ACTIONS, action) < 0)
+		return { success: false, error: 'unsupported service action' };
+
+	// action is selected from SERVICE_ACTIONS above, so it is safe to append to
+	// this fixed command. fs.popen() accepts a command string on OpenWrt 24.10.
+	let result = process('/etc/init.d/circud ' + action + ' 2>&1');
+	return {
+		success: result.code == 0,
+		action,
+		exit_code: result.code,
+		error: result.code == 0 ? null :
+			(trim(result.output) || 'service action failed')
+	};
+}
+
+return {
+	'luci.circud': {
+		status: {
+			call: function() {
+				return {
+					running: running(),
+					enabled: init_enabled('circud'),
+					config_exists: !!stat(CONFIG_PATH)
+				};
+			}
+		},
+		read_config: {
+			call: function() {
+				return read_config(true);
+			}
+		},
+		read_config_private: {
+			call: function() {
+				return read_config(false);
+			}
+		},
+		write_config: {
+			args: { content: '' },
+			call: write_config
+		},
+		hash_password: {
+			args: { password: '' },
+			call: hash_password
+		},
+		service_action: {
+			args: { action: '' },
+			call: service_action
+		},
+		proxy_access: {
+			call: function() {
+				return { allowed: true };
+			}
+		}
+	}
+};
