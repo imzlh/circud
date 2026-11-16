@@ -2,13 +2,14 @@
 
 #include <boost/json/parse.hpp>
 #include <boost/json/serialize.hpp>
+#include <boost/system/error_code.hpp>
 
 #include <stdexcept>
 
 namespace circud {
 
     boost::json::value parse_json(std::string_view text) {
-        boost::json::error_code error;
+        boost::system::error_code error;
         auto value = boost::json::parse(text, error);
         if (error) {
             throw std::runtime_error("invalid JSON: " + error.message());

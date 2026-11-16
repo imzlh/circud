@@ -1653,7 +1653,11 @@ namespace circud {
         auto self = shared_from_this();
         asio::dispatch(core_.io(), [self, generation] {
             boost::system::error_code ignored;
-            generation->retry_timer.cancel(ignored);
+            // Boost 1.90+ removed the cancel(error_code&) overload from
+            // waitable timers; the throwing cancel() never fails for a timer
+            // on Linux, and the socket/acceptor calls below keep their
+            // non-throwing overloads on every supported Boost line.
+            generation->retry_timer.cancel();
             generation->acceptor.cancel(ignored);
             generation->acceptor.close(ignored);
             auto sessions = generation->sessions;
