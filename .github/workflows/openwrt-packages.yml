@@ -95,8 +95,9 @@ jobs:
             packaging/openwrt/luci-app-circud/root/usr/share/luci/menu.d/luci-app-circud.json \
             packaging/openwrt/luci-app-circud/root/usr/share/rpcd/acl.d/luci-app-circud.json
 
-      - name: Build OpenWrt package
-        id: sdk
+      - name: Build OpenWrt package (attempt 1)
+        id: sdk_try1
+        continue-on-error: true
         uses: openwrt/gh-action-sdk@v11
         env:
           ARCH: ${{ matrix.arch }}-${{ matrix.sdk_branch }}
@@ -106,6 +107,23 @@ jobs:
           # luci-app-circud is architecture independent. Build it once per
           # OpenWrt series to avoid duplicate release assets with the same
           # filename from every CPU matrix job.
+          PACKAGES: ${{ matrix.arch == 'x86_64' && 'circud luci-app-circud' || 'circud' }}
+          V: s
+
+      # Snapshot SDK archives are republished on every OpenWrt rebuild, so a
+      # download that races such a rebuild fails its sha256 verification, and
+      # corrupted mirror responses have the same symptom. A second attempt
+      # refetches the checksums and the archive together; genuine build
+      # failures still fail the job on this attempt.
+      - name: Build OpenWrt package (attempt 2)
+        id: sdk
+        if: steps.sdk_try1.outcome == 'failure'
+        uses: openwrt/gh-action-sdk@v11
+        env:
+          ARCH: ${{ matrix.arch }}-${{ matrix.sdk_branch }}
+          BUILD_LOG: 1
+          FEEDNAME: circud
+          INDEX: 0
           PACKAGES: ${{ matrix.arch == 'x86_64' && 'circud luci-app-circud' || 'circud' }}
           V: s
 
