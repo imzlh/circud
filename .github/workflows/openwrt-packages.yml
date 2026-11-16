@@ -229,7 +229,14 @@ jobs:
         run: |
           set -euo pipefail
           docker pull "$SDK_IMAGE"
-          docker run --rm \
+          # Snapshot containers fetch the SDK (and its sha256sums) through
+          # setup.sh on first use; that download races OpenWrt's republishes
+          # and can fail verification. Retry the whole container validation:
+          # each attempt refetches the checksums together with the archive,
+          # while payload check failures repeat deterministically and still
+          # fail the job after the attempts are exhausted.
+          attempt=1
+          until docker run --rm \
             -v "$RUNNER_TEMP/circud-openwrt-packages:/packages:ro" \
             -e BUILD_LUCI \
             --entrypoint sh \
@@ -278,6 +285,16 @@ jobs:
                 test -f "$work/luci/usr/share/ucode/luci/controller/circud.uc"
               fi
             '
+          do
+            if [ "$attempt" -ge 3 ]; then
+              printf 'APK payload validation failed after %d attempts\n' \
+                "$attempt" >&2
+              exit 1
+            fi
+            printf 'validation attempt %d failed; retrying\n' "$attempt"
+            attempt=$((attempt + 1))
+            sleep 30
+          done
 
       - name: Upload package
         uses: actions/upload-artifact@v4
