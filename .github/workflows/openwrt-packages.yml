@@ -313,6 +313,9 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          # The release job never checks out the repository, so gh cannot
+          # derive the repo from a git remote; name it explicitly instead.
+          GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
