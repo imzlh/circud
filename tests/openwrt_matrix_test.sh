@@ -68,6 +68,13 @@ grep -Fq 'libsqlite3 libffi libexpat libnghttp2' \
     "$source_root/scripts/build-openwrt.sh"
 grep -Fq 'package/feeds/base/zlib' "$source_root/scripts/build-openwrt.sh"
 grep -Fq 'package/feeds/packages/boost' "$source_root/scripts/build-openwrt.sh"
+for boost_seed in \
+    'CONFIG_PACKAGE_boost=m' \
+    'CONFIG_PACKAGE_boost-json=m'
+do
+    grep -Fq "$boost_seed" "$source_root/scripts/build-openwrt.sh"
+    grep -Fq "$boost_seed" "$source_root/scripts/build-luci-openwrt.sh"
+done
 grep -Fq 'scripts/normalize-openwrt-depends.sh' \
     "$source_root/scripts/build-openwrt.sh"
 grep -Fq 'libnghttp2' "$source_root/scripts/build-openwrt.sh"

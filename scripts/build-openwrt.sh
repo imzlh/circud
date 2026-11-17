@@ -225,7 +225,7 @@ printf '%s\n' \
 sdk_defconfig initial
 
 for config_name in \
-    PACKAGE_circud \
+    PACKAGE_circud PACKAGE_boost PACKAGE_boost-json \
     PACKAGE_libcurl PACKAGE_libopenssl PACKAGE_libnghttp2 PACKAGE_zlib \
     LIBCURL_WOLFSSL LIBCURL_GNUTLS LIBCURL_OPENSSL \
     LIBCURL_MBEDTLS LIBCURL_NOSSL LIBCURL_ZLIB LIBCURL_ZSTD \
@@ -242,6 +242,8 @@ do
 done
 printf '%s\n' \
     'CONFIG_PACKAGE_circud=m' \
+    'CONFIG_PACKAGE_boost=m' \
+    'CONFIG_PACKAGE_boost-json=m' \
     'CONFIG_PACKAGE_libcurl=m' \
     'CONFIG_PACKAGE_libopenssl=m' \
     'CONFIG_PACKAGE_libnghttp2=m' \
@@ -269,8 +271,8 @@ printf '%s\n' \
     '# CONFIG_OPENSSL_ENGINE_BUILTIN_PADLOCK is not set' >> "$sdk_dir/.config"
 sdk_defconfig circud
 for package_name in \
-    circud libcurl libopenssl libnghttp2 zlib boost-json libsqlite3 minizip \
-    libexpat libffi
+    circud boost boost-json libcurl libopenssl libnghttp2 zlib libsqlite3 \
+    minizip libexpat libffi
 do
     grep -Eq "^CONFIG_PACKAGE_${package_name}=[my]$" "$sdk_dir/.config" || {
         printf 'SDK defconfig did not select %s\n' "$package_name" >&2
