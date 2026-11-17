@@ -74,8 +74,14 @@ grep -Fq './scripts/feeds install -p packages boost-json minizip' \
     "$source_root/scripts/build-openwrt.sh"
 grep -Fq 'libsqlite3 libffi libexpat libnghttp2' \
     "$source_root/scripts/build-openwrt.sh"
-grep -Fq 'package/feeds/base/zlib' "$source_root/scripts/build-openwrt.sh"
-grep -Fq 'package/feeds/packages/boost' "$source_root/scripts/build-openwrt.sh"
+for build_script in \
+    "$source_root/scripts/build-openwrt.sh" \
+    "$source_root/scripts/build-luci-openwrt.sh"
+do
+    grep -Fq 'source_makefile = substr($0, 18)' "$build_script"
+    grep -Fq 'if (package_name == name && source_makefile != "")' \
+        "$build_script"
+done
 for boost_seed in \
     'CONFIG_PACKAGE_boost=m' \
     'CONFIG_PACKAGE_boost-json=m'

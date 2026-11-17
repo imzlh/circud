@@ -143,21 +143,32 @@ fi
     ./scripts/feeds install -p packages boost-json minizip \
         libsqlite3 libffi libexpat libnghttp2
     ./scripts/feeds install -p circud circud
-    for recipe in \
-        package/feeds/base/zlib \
-        package/feeds/base/ca-certificates \
-        package/feeds/packages/boost \
-        package/feeds/packages/sqlite3 \
-        package/feeds/packages/minizip \
-        package/feeds/packages/libffi \
-        package/feeds/packages/expat \
-        package/feeds/packages/nghttp2 \
-        package/feeds/circud/circud
+    # Resolve package identities through feed metadata. Snapshot feeds can
+    # move a subpackage (for example libffi) to a different repository while
+    # keeping the same source recipe, so installed directory names are not
+    # stable API.
+    for package_name in \
+        zlib ca-certificates boost-json minizip libsqlite3 libffi \
+        libexpat libnghttp2 circud
     do
-        [ -f "$recipe/Makefile" ] || {
-            printf 'feeds install did not produce recipe %s\n' "$recipe" >&2
+        source_makefile=$(awk -v name="$package_name" '
+            /^Source-Makefile: / {
+                source_makefile = substr($0, 18)
+                next
+            }
+            /^Package: / {
+                package_name = substr($0, 10)
+                if (package_name == name && source_makefile != "") {
+                    print source_makefile
+                    exit
+                }
+            }
+        ' feeds/*.tmp/.packageinfo feeds/*.tmp/info/.packageinfo-* 2>/dev/null)
+        if [ -z "$source_makefile" ] || [ ! -f "$source_makefile" ]; then
+            printf 'feeds install did not provide a recipe for %s\n' \
+                "$package_name" >&2
             exit 1
-        }
+        fi
     done
 )
 
