@@ -108,11 +108,11 @@ grep -Fq '[ -f feeds.conf ] || cp feeds.conf.default feeds.conf' \
     "$source_root/scripts/build-luci-openwrt.sh"
 grep -Fq './scripts/feeds update base packages luci circud' \
     "$source_root/scripts/build-luci-openwrt.sh"
-grep -Fq './scripts/feeds install -p base util-linux zlib ca-certificates' \
+grep -Fq './scripts/feeds install -p base script-utils zlib ca-certificates' \
     "$source_root/scripts/build-luci-openwrt.sh"
-grep -Fq './scripts/feeds install -p packages boost minizip sqlite' \
+grep -Fq './scripts/feeds install -p packages boost-json minizip' \
     "$source_root/scripts/build-luci-openwrt.sh"
-grep -Fq 'libffi expat nghttp2' \
+grep -Fq 'libsqlite3 libffi libexpat libnghttp2' \
     "$source_root/scripts/build-luci-openwrt.sh"
 grep -Fq 'package/feeds/packages/boost' \
     "$source_root/scripts/build-luci-openwrt.sh"

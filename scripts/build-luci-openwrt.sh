@@ -79,12 +79,13 @@ sdk_dir=$(find "$work" -mindepth 1 -maxdepth 1 -type d -name 'openwrt-sdk-*' | h
     sed -i '/^src-link circud /d' feeds.conf
     printf '%s\n' "src-link circud $source_root/packaging/openwrt" >> feeds.conf
     ./scripts/feeds update base packages luci circud
-    # script-utils and ucode-mod-socket are subpackages of util-linux and
-    # ucode. scripts/feeds names their source directories by recipe name.
-    ./scripts/feeds install -p base util-linux zlib ca-certificates
-    ./scripts/feeds install -p packages boost minizip sqlite \
-        libffi expat nghttp2
-    ./scripts/feeds install -p luci luci-base
+    # scripts/feeds resolves package names to their source recipe, so
+    # script-utils installs the util-linux directory and ucode-mod-socket
+    # installs the ucode directory.
+    ./scripts/feeds install -p base script-utils zlib ca-certificates
+    ./scripts/feeds install -p packages boost-json minizip \
+        libsqlite3 libffi libexpat libnghttp2
+    ./scripts/feeds install -p luci luci-base ucode-mod-socket
     ./scripts/feeds install -p circud circud luci-app-circud
     for recipe in \
         package/feeds/base/util-linux \
