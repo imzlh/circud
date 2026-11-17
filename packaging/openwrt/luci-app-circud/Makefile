@@ -1,13 +1,10 @@
 LUCI_APP_CIRCUD_MAKEFILE:=$(realpath $(lastword $(MAKEFILE_LIST)))
 CIRCUD_SOURCE_DIR:=$(abspath $(dir $(LUCI_APP_CIRCUD_MAKEFILE))/../../..)
 
-# gh-action-sdk builds the feed at /feed in an isolated SDK container. Run the
-# native LuCI/rpcd tests there while the matching target ucode runtime and
-# socket module are still available; the composite action exports only bin/
-# after the container exits. Other architectures and ordinary feed builds are
-# left untouched.
+# Run the native LuCI/rpcd tests while the target ucode runtime and socket
+# module are available. Ordinary feed builds remain untouched.
 define Build/Prepare/luci-app-circud
-	if [ "$(FEEDNAME)" = "circud" ] && \
+	if [ "$(LUCI_APP_CIRCUD_TEST)" = "1" ] && \
 	   [ -x "$(STAGING_DIR_ROOT)/lib/ld-musl-x86_64.so.1" ] && \
 	   [ -x "$(CIRCUD_SOURCE_DIR)/tests/run_luci_target_tests.sh" ]; then \
 		"$(CIRCUD_SOURCE_DIR)/tests/run_luci_target_tests.sh" \

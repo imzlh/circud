@@ -26,13 +26,27 @@ is used in header-only mode.
 ## OpenWrt packages
 
 The `OpenWrt packages` GitHub Actions workflow builds `circud` and its optional
-`luci-app-circud` companion for
-`x86_64`, AArch64, ARMv7, big-endian MIPS and little-endian MIPS. OpenWrt
-24.10 SDKs produce `.ipk` files; current snapshot SDKs produce `.apk` files.
-Each matrix job uses the official OpenWrt SDK container and uploads its package
-as a workflow artifact. A `v*` tag also creates a GitHub release containing all
-twelve packages: ten architecture-specific daemon packages and one
-architecture-independent LuCI package for each OpenWrt series.
+`luci-app-circud` companion from official OpenWrt SDKs. Package identities are
+the SDK's `ARCH_PACKAGES` values, such as `aarch64_cortex-a53`,
+`arm_cortex-a5_vfpv4`, `i386_pentium4`, `mips_24kc` and `riscv64_generic`.
+The matrix covers x86-64, 32-bit x86, generic and board-specific AArch64,
+ARMv5/v6/v7, both MIPS byte orders and RISC-V. Every target is built for
+OpenWrt 24.10 (`.ipk`) and the current snapshot (`.apk`) where published.
+
+The architecture lists are
+[`config/openwrt-targets.tsv`](config/openwrt-targets.tsv), a single table
+shared by both package formats and kept in the same shape as `cno-builds`.
+Each row records its channels, SDK target/subtarget and expected
+`ARCH_PACKAGES`. That keeps SDKs with the same package architecture but
+different CPU tuning, such as MT7620 and MT7621, as separate jobs. A build
+fails if the downloaded SDK reports an `ARCH_PACKAGES` value different from
+the requested row. Artifacts include the architecture, target and subtarget,
+for example `circud-openwrt-ipk-aarch64_cortex-a53-bcm27xx-bcm2710.ipk`,
+so files from distinct SDKs cannot overwrite one another.
+
+A `v*` tag creates a GitHub release containing 40 packages: 19 IPKs, 19 APKs
+and one architecture-independent LuCI package for each channel. The concrete
+set may grow when the target lists are extended.
 
 The workflow checks out circu.js independently, including its submodules. A
 manual run can select another public repository and branch, tag or commit with

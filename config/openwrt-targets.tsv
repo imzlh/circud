@@ -1,0 +1,28 @@
+# formats<TAB>target<TAB>subtarget<TAB>ARCH_PACKAGES
+# This table is kept in the same order and shape as cno-builds, with the
+# non-OpenWrt metadata fields omitted. "ipk" is OpenWrt 24.10 and "apk" is
+# the current snapshot channel.
+#
+# Keep duplicate ARCH_PACKAGES rows when their SDK CPU tuning differs. For
+# example, ramips/mt7620 and ramips/mt7621 both publish mipsel_24kc, but the
+# latter SDK tunes for 1004Kc rather than 24Kc.
+ipk+apk	x86	64	x86_64
+ipk+apk	x86	generic	i386_pentium4
+ipk+apk	armsr	armv8	aarch64_generic
+ipk+apk	bcm27xx	bcm2710	aarch64_cortex-a53
+ipk+apk	bcm27xx	bcm2711	aarch64_cortex-a72
+ipk+apk	at91	sama5	arm_cortex-a5_vfpv4
+ipk+apk	mediatek	mt7629	arm_cortex-a7
+ipk+apk	sunxi	cortexa7	arm_cortex-a7_neon-vfpv4
+ipk+apk	armsr	armv7	arm_cortex-a15_neon-vfpv4
+ipk+apk	bcm53xx	generic	arm_cortex-a9
+ipk+apk	mvebu	cortexa9	arm_cortex-a9_vfpv3-d16
+ipk+apk	bcm27xx	bcm2708	arm_arm1176jzf-s_vfp
+ipk+apk	at91	sam9x	arm_arm926ej-s
+ipk+apk	kirkwood	generic	arm_xscale
+ipk+apk	ath79	generic	mips_24kc
+ipk+apk	ramips	mt7620	mipsel_24kc
+ipk+apk	ramips	rt3883	mipsel_74kc
+ipk+apk	ramips	mt7621	mipsel_24kc
+ipk	sifiveu	generic	riscv64_riscv64
+apk	sifiveu	generic	riscv64_generic

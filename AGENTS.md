@@ -164,7 +164,12 @@ session cookie upstream or allow an upstream `Set-Cookie` header to replace it.
 The OpenWrt GitHub Actions build must clone circu.js independently with its
 submodules. Keep 24.10 `.ipk` builds separate from snapshot `.apk` builds; the
 two suffixes represent different package-manager generations, not interchangeable
-archive names. Do not vendor circu.js into this repository to make CI pass.
+archive names. The daemon target matrix is keyed by the SDK's official
+`ARCH_PACKAGES` value, not a generic CPU family. Keep the SDK target/subtarget
+in each target row because distinct SDKs can share a package architecture with
+different CPU tuning. `config/openwrt-targets.tsv` is the single matrix source
+for both `.ipk` and `.apk` channels; its data rows mirror the OpenWrt subset of
+`cno-builds`. Do not vendor circu.js into this repository to make CI pass.
 
 Update these files when their contracts change:
 

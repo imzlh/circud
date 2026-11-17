@@ -29,52 +29,52 @@ permissions:
   contents: read
 
 jobs:
-  package:
-    name: ${{ matrix.format }} / ${{ matrix.arch }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
+  select:
+    name: Select package architectures
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      all: ${{ steps.matrices.outputs.all }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: matrices
+        name: Expand architecture matrices
+        shell: bash
+        run: |
+          set -euo pipefail
+          ipk=$(sh scripts/openwrt-matrix.sh ipk)
+          apk=$(sh scripts/openwrt-matrix.sh apk)
+          all=$(jq -cn --argjson ipk "$ipk" --argjson apk "$apk" '$ipk + $apk')
+          echo "all=$all" >> "$GITHUB_OUTPUT"
+
+  daemon:
+    name: ${{ matrix.channel == 'ipk' && 'IPK' || 'APK' }} ${{ matrix.arch }} (${{ matrix.target }}/${{ matrix.subtarget }})
+    needs: select
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
     strategy:
       fail-fast: false
+      max-parallel: 6
       matrix:
-        arch:
-          - x86_64
-          - aarch64_generic
-          - arm_cortex-a7_neon-vfpv4
-          - mips_24kc
-          - mipsel_24kc
-        series:
-          - "24.10"
-          - snapshot
-        include:
-          - series: "24.10"
-            sdk_branch: openwrt-24.10
-            format: ipk
-          - series: snapshot
-            sdk_branch: master
-            format: apk
-
+        include: ${{ fromJSON(needs.select.outputs.all) }}
     steps:
-      - name: Check out circud
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-
-      - name: Check out circu.js
-        uses: actions/checkout@v4
+          fetch-depth: 1
+      - uses: actions/checkout@v4
         with:
           repository: ${{ inputs.circu_repository || 'imzlh/circu.js' }}
           ref: ${{ inputs.circu_ref || 'master' }}
           path: .ci/circu.js
           submodules: recursive
-
-      - name: Check out llhttp
-        uses: actions/checkout@v4
+          fetch-depth: 1
+      - uses: actions/checkout@v4
         with:
           repository: nodejs/llhttp
           ref: release/v9.3.0
           path: .ci/llhttp
-
-      - name: Check circu.js ABI
+          fetch-depth: 1
+      - name: Verify circu.js ABI
         shell: bash
         run: |
           set -euo pipefail
@@ -82,7 +82,94 @@ jobs:
           test -f .ci/circu.js/src/message_clone.h
           grep -Fq 'TJS_EvBusEmit' .ci/circu.js/src/tjs.h
           grep -Fq 'src/message_clone.c' .ci/circu.js/CMakeLists.txt
+      - name: Install SDK host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bison build-essential ca-certificates curl flex g++ gawk gcc-multilib \
+            gettext git libncurses-dev libssl-dev pkg-config python3 rsync \
+            swig unzip zlib1g-dev zstd
+      - name: Build daemon package
+        shell: bash
+        env:
+          CHANNEL: ${{ matrix.channel }}
+          ARCH: ${{ matrix.arch }}
+          TARGET: ${{ matrix.target }}
+          SUBTARGET: ${{ matrix.subtarget }}
+        run: |
+          set +e
+          log="$RUNNER_TEMP/circud-$CHANNEL-$ARCH.log"
+          sh scripts/build-openwrt.sh "$CHANNEL" "$ARCH" "$TARGET" \
+            "$SUBTARGET" "dist/openwrt/$CHANNEL/$ARCH" 2>&1 |
+            tee "$log"
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            annotation=$(tail -c 2800 "$log")
+            annotation=${annotation//'%'/'%25'}
+            annotation=${annotation//$'\r'/'%0D'}
+            annotation=${annotation//$'\n'/'%0A'}
+            printf '::error title=%s %s failed::%s\n' \
+              "$CHANNEL" "$ARCH" "$annotation"
+            exit "$status"
+          fi
+      - name: Validate IPK payload
+        if: matrix.channel == 'ipk'
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+          CHANNEL: ${{ matrix.channel }}
+          TARGET: ${{ matrix.target }}
+          SUBTARGET: ${{ matrix.subtarget }}
+        run: |
+          set -euo pipefail
+          package="dist/openwrt/$CHANNEL/$ARCH/circud-openwrt-${CHANNEL}-${ARCH}-${TARGET}-${SUBTARGET}.ipk"
+          test -s "$package"
+          listing=$(tar -tf "$package")
+          grep -Fxq './control.tar.gz' <<<"$listing"
+          grep -Fxq './data.tar.gz' <<<"$listing"
+          payload=$(tar -xOf "$package" ./data.tar.gz | tar -tzf -)
+          grep -Fxq './usr/bin/circud' <<<"$payload"
+          grep -Fxq './etc/init.d/circud' <<<"$payload"
+          grep -Fxq './etc/circud/config.json' <<<"$payload"
+          grep -Fxq './usr/share/circud/circud.example.json' <<<"$payload"
+          grep -Fxq './usr/share/circud/public/index.html' <<<"$payload"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: circud-openwrt-${{ matrix.channel }}-${{ matrix.arch }}-${{ matrix.target }}-${{ matrix.subtarget }}
+          path: |
+            dist/openwrt/${{ matrix.channel }}/${{ matrix.arch }}/*.${{ matrix.channel }}
+            dist/openwrt/${{ matrix.channel }}/${{ matrix.arch }}/*.buildinfo
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: circud-openwrt-${{ matrix.channel }}-${{ matrix.arch }}-${{ matrix.target }}-${{ matrix.subtarget }}-logs
+          path: ${{ runner.temp }}/circud-${{ matrix.channel }}-${{ matrix.arch }}.log
+          if-no-files-found: ignore
+          retention-days: 7
 
+  luci:
+    name: LuCI ${{ matrix.channel }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - channel: ipk
+            arch: x86_64
+            target: x86
+            subtarget: 64
+          - channel: apk
+            arch: x86_64
+            target: x86
+            subtarget: 64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
       - name: Test LuCI configuration model
         shell: bash
         run: |
@@ -94,267 +181,106 @@ jobs:
           jq empty \
             packaging/openwrt/luci-app-circud/root/usr/share/luci/menu.d/luci-app-circud.json \
             packaging/openwrt/luci-app-circud/root/usr/share/rpcd/acl.d/luci-app-circud.json
-
-      - name: Build OpenWrt package (attempt 1)
-        id: sdk_try1
-        continue-on-error: true
-        uses: openwrt/gh-action-sdk@v11
-        env:
-          ARCH: ${{ matrix.arch }}-${{ matrix.sdk_branch }}
-          BUILD_LOG: 1
-          FEEDNAME: circud
-          INDEX: 0
-          # luci-app-circud is architecture independent. Build it once per
-          # OpenWrt series to avoid duplicate release assets with the same
-          # filename from every CPU matrix job.
-          PACKAGES: ${{ matrix.arch == 'x86_64' && 'circud luci-app-circud' || 'circud' }}
-          V: s
-
-      # Snapshot SDK archives are republished on every OpenWrt rebuild, so a
-      # download that races such a rebuild fails its sha256 verification, and
-      # corrupted mirror responses have the same symptom. A second attempt
-      # refetches the checksums and the archive together; genuine build
-      # failures still fail the job on this attempt.
-      - name: Build OpenWrt package (attempt 2)
-        id: sdk
-        if: steps.sdk_try1.outcome == 'failure'
-        uses: openwrt/gh-action-sdk@v11
-        env:
-          ARCH: ${{ matrix.arch }}-${{ matrix.sdk_branch }}
-          BUILD_LOG: 1
-          FEEDNAME: circud
-          INDEX: 0
-          PACKAGES: ${{ matrix.arch == 'x86_64' && 'circud luci-app-circud' || 'circud' }}
-          V: s
-
-      - name: Validate package
-        id: package
+      - name: Install SDK host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bison build-essential ca-certificates curl flex g++ gawk gcc-multilib \
+            gettext git libncurses-dev libssl-dev pkg-config python3 rsync \
+            swig unzip zlib1g-dev zstd
+      - name: Build LuCI package
         shell: bash
         env:
-          EXPECTED_FORMAT: ${{ matrix.format }}
-          OPENWRT_ARCH: ${{ matrix.arch }}
-          OPENWRT_SERIES: ${{ matrix.series }}
-          BUILD_LUCI: ${{ matrix.arch == 'x86_64' && '1' || '0' }}
+          CHANNEL: ${{ matrix.channel }}
+          ARCH: ${{ matrix.arch }}
+          TARGET: ${{ matrix.target }}
+          SUBTARGET: ${{ matrix.subtarget }}
         run: |
-          set -euo pipefail
-          if [[ "$EXPECTED_FORMAT" == ipk ]]; then
-            circud_pattern='circud_*.ipk'
-            luci_pattern='luci-app-circud_*.ipk'
-          else
-            circud_pattern='circud-*.apk'
-            luci_pattern='luci-app-circud-*.apk'
+          set +e
+          log="$RUNNER_TEMP/circud-luci-$CHANNEL.log"
+          sh scripts/build-luci-openwrt.sh "$CHANNEL" "$ARCH" "$TARGET" \
+            "$SUBTARGET" "dist/openwrt/luci/$CHANNEL" 2>&1 |
+            tee "$log"
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            annotation=$(tail -c 2800 "$log")
+            annotation=${annotation//'%'/'%25'}
+            annotation=${annotation//$'\r'/'%0D'}
+            annotation=${annotation//$'\n'/'%0A'}
+            printf '::error title=LuCI %s failed::%s\n' \
+              "$CHANNEL" "$annotation"
+            exit "$status"
           fi
-          mapfile -d '' packages < <(
-            find bin/packages -type f \
-              \( -name "$circud_pattern" -o -name "$luci_pattern" \) \
-              -print0
-          )
-          expected_count=$((1 + BUILD_LUCI))
-          if [[ ${#packages[@]} -ne $expected_count ]]; then
-            printf 'expected %d .%s package(s), found %d\n' \
-              "$expected_count" "$EXPECTED_FORMAT" "${#packages[@]}" >&2
-            find bin -maxdepth 5 -type f -print >&2 || true
-            exit 1
-          fi
-
-          package_dir="$RUNNER_TEMP/circud-openwrt-packages"
-          mkdir -p "$package_dir"
-          for package in "${packages[@]}"; do
-            test -s "$package"
-            filename=${package##*/}
-            if [[ "$EXPECTED_FORMAT" == apk ]]; then
-              stem=${filename%.apk}
-              if [[ "$filename" == luci-app-circud-* ]]; then
-                filename="${stem}-all.apk"
-              else
-                filename="${stem}-${OPENWRT_ARCH}.apk"
-              fi
-            fi
-            cp "$package" "$package_dir/$filename"
-          done
-          {
-            printf 'OpenWrt: %s\n' "$OPENWRT_SERIES"
-            printf 'Architecture: %s\n' "$OPENWRT_ARCH"
-            printf 'Format: %s\n' "$EXPECTED_FORMAT"
-            printf 'circu.js: %s\n' "$(git -C .ci/circu.js rev-parse HEAD)"
-            printf 'llhttp: %s\n' "$(git -C .ci/llhttp rev-parse HEAD)"
-            (cd "$package_dir" && sha256sum *."$EXPECTED_FORMAT")
-          } > "$package_dir/build-info.txt"
-
-          check_payload() {
-            local payload=$1
-            grep -Eq '^\./usr/bin/circud$' <<<"$payload"
-            grep -Eq '^\./etc/init.d/circud$' <<<"$payload"
-            grep -Eq '^\./etc/circud/config.json$' <<<"$payload"
-            grep -Eq '^\./usr/share/circud/circud.example.json$' <<<"$payload"
-            grep -Eq '^\./usr/share/circud/public/index.html$' <<<"$payload"
-          }
-
-          check_luci_payload() {
-            local payload=$1
-            grep -Eq '^\./www/luci-static/resources/view/circud/overview.js$' <<<"$payload"
-            grep -Eq '^\./usr/share/luci/menu.d/luci-app-circud.json$' <<<"$payload"
-            grep -Eq '^\./usr/share/rpcd/acl.d/luci-app-circud.json$' <<<"$payload"
-            grep -Eq '^\./usr/share/rpcd/ucode/luci.circud$' <<<"$payload"
-            grep -Eq '^\./usr/share/ucode/luci/controller/circud.uc$' <<<"$payload"
-          }
-
-          if [[ "$EXPECTED_FORMAT" == ipk ]]; then
-            circud_package=$(find "$package_dir" -maxdepth 1 -name 'circud_*.ipk' -print -quit)
-
-            listing=$(tar -tf "$circud_package")
-            grep -Fxq './control.tar.gz' <<<"$listing"
-            grep -Fxq './data.tar.gz' <<<"$listing"
-
-            payload=$(tar -xOf "$circud_package" ./data.tar.gz | tar -tzf -)
-            check_payload "$payload"
-
-            if [[ "$BUILD_LUCI" == 1 ]]; then
-              luci_package=$(find "$package_dir" -maxdepth 1 -name 'luci-app-circud_*.ipk' -print -quit)
-              listing=$(tar -tf "$luci_package")
-              grep -Fxq './control.tar.gz' <<<"$listing"
-              grep -Fxq './data.tar.gz' <<<"$listing"
-
-              payload=$(tar -xOf "$luci_package" ./data.tar.gz | tar -tzf -)
-              check_luci_payload "$payload"
-            fi
-          fi
-
-      - name: Validate APK payload
-        if: matrix.format == 'apk'
+      - name: Validate LuCI IPK payload
+        if: matrix.channel == 'ipk'
         shell: bash
         env:
-          BUILD_LUCI: ${{ matrix.arch == 'x86_64' && '1' || '0' }}
-          SDK_IMAGE: ghcr.io/openwrt/sdk:${{ matrix.arch }}-${{ matrix.sdk_branch }}
+          CHANNEL: ${{ matrix.channel }}
         run: |
           set -euo pipefail
-          docker pull "$SDK_IMAGE"
-          # Snapshot containers fetch the SDK (and its sha256sums) through
-          # setup.sh on first use; that download races OpenWrt's republishes
-          # and can fail verification. Retry the whole container validation:
-          # each attempt refetches the checksums together with the archive,
-          # while payload check failures repeat deterministically and still
-          # fail the job after the attempts are exhausted.
-          attempt=1
-          until docker run --rm \
-            -v "$RUNNER_TEMP/circud-openwrt-packages:/packages:ro" \
-            -e BUILD_LUCI \
-            --entrypoint sh \
-            "$SDK_IMAGE" -euxc '
-              if [ -f setup.sh ]; then
-                bash setup.sh
-              fi
-              apk_bin=staging_dir/host/bin/apk
-              if [ ! -x "$apk_bin" ]; then
-                make package/system/apk/host/compile V=s
-              fi
-
-              work=$(mktemp -d)
-              trap '\''rm -rf "$work"'\'' EXIT
-              circud_package=$(find /packages -maxdepth 1 \
-                -name '\''circud-*.apk'\'' -print -quit)
-              test -n "$circud_package"
-              "$apk_bin" adbdump --format json "$circud_package" \
-                > "$work/circud.json"
-              grep -Eq '\''"name"[[:space:]]*:[[:space:]]*"circud"'\'' \
-                "$work/circud.json"
-              mkdir -p "$work/circud"
-              "$apk_bin" --allow-untrusted extract --no-chown \
-                --destination "$work/circud" "$circud_package"
-              test -x "$work/circud/usr/bin/circud"
-              test -x "$work/circud/etc/init.d/circud"
-              test -f "$work/circud/etc/circud/config.json"
-              test -f "$work/circud/usr/share/circud/circud.example.json"
-              test -f "$work/circud/usr/share/circud/public/index.html"
-
-              if [ "$BUILD_LUCI" = 1 ]; then
-                luci_package=$(find /packages -maxdepth 1 \
-                  -name '\''luci-app-circud-*.apk'\'' -print -quit)
-                test -n "$luci_package"
-                "$apk_bin" adbdump --format json "$luci_package" \
-                  > "$work/luci.json"
-                grep -Eq '\''"name"[[:space:]]*:[[:space:]]*"luci-app-circud"'\'' \
-                  "$work/luci.json"
-                mkdir -p "$work/luci"
-                "$apk_bin" --allow-untrusted extract --no-chown \
-                  --destination "$work/luci" "$luci_package"
-                test -f "$work/luci/www/luci-static/resources/view/circud/overview.js"
-                test -f "$work/luci/usr/share/luci/menu.d/luci-app-circud.json"
-                test -f "$work/luci/usr/share/rpcd/acl.d/luci-app-circud.json"
-                test -f "$work/luci/usr/share/rpcd/ucode/luci.circud"
-                test -f "$work/luci/usr/share/ucode/luci/controller/circud.uc"
-              fi
-            '
-          do
-            if [ "$attempt" -ge 3 ]; then
-              printf 'APK payload validation failed after %d attempts\n' \
-                "$attempt" >&2
-              exit 1
-            fi
-            printf 'validation attempt %d failed; retrying\n' "$attempt"
-            attempt=$((attempt + 1))
-            sleep 30
-          done
-
-      - name: Upload package
-        uses: actions/upload-artifact@v4
+          package="dist/openwrt/luci/$CHANNEL/circud-luci-${CHANNEL}.ipk"
+          test -s "$package"
+          work=$(mktemp -d)
+          trap 'rm -rf -- "$work"' EXIT HUP INT TERM
+          tar -xf "$package" -C "$work"
+          payload=$(tar -tzf "$work/data.tar.gz")
+          grep -Fxq './www/luci-static/resources/view/circud/overview.js' <<<"$payload"
+          grep -Fxq './usr/share/luci/menu.d/luci-app-circud.json' <<<"$payload"
+          grep -Fxq './usr/share/rpcd/acl.d/luci-app-circud.json' <<<"$payload"
+          grep -Fxq './usr/share/rpcd/ucode/luci.circud' <<<"$payload"
+          grep -Fxq './usr/share/ucode/luci/controller/circud.uc' <<<"$payload"
+      - uses: actions/upload-artifact@v4
         with:
-          name: circud-openwrt-${{ matrix.series }}-${{ matrix.arch }}-${{ matrix.format }}
-          path: ${{ runner.temp }}/circud-openwrt-packages/
+          name: circud-openwrt-luci-${{ matrix.channel }}
+          path: |
+            dist/openwrt/luci/${{ matrix.channel }}/*.${{ matrix.channel }}
+            dist/openwrt/luci/${{ matrix.channel }}/*.buildinfo
           if-no-files-found: error
           retention-days: 30
-
-      - name: Upload build log
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: circud-openwrt-${{ matrix.series }}-${{ matrix.arch }}-logs
-          path: logs/
-          if-no-files-found: ignore
-          retention-days: 14
 
   release:
     name: Attach packages to release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: package
-    runs-on: ubuntu-latest
+    needs: [daemon, luci]
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - name: Download packages
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          pattern: circud-openwrt-*-*-*
+          pattern: circud-openwrt-*-*
           path: release-assets
-
+      - name: Assemble release
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir release
+          find release-assets -type f \( -name '*.ipk' -o -name '*.apk' \) \
+            -print0 | sort -z | while IFS= read -r -d '' source; do
+              name=${source##*/}
+              destination="release/$name"
+              if [ -e "$destination" ]; then
+                cmp -s "$source" "$destination" || {
+                  printf 'duplicate release asset name: %s\n' "$name" >&2
+                  exit 1
+                }
+              else
+                cp "$source" "$destination"
+              fi
+            done
+          test "$(find release -maxdepth 1 -type f \( -name '*.ipk' -o -name '*.apk' \) | wc -l)" -eq 40
+          (cd release && sha256sum *.ipk *.apk > SHA256SUMS.txt)
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          # The release job never checks out the repository, so gh cannot
-          # derive the repo from a git remote; name it explicitly instead.
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
-          mapfile -d '' packages < <(
-            find release-assets -type f \( -name '*.ipk' -o -name '*.apk' \) \
-              -print0
-          )
-          if [[ ${#packages[@]} -ne 12 ]]; then
-            printf 'expected 12 release packages, found %d\n' \
-              "${#packages[@]}" >&2
-            exit 1
-          fi
-          duplicates=$(
-            printf '%s\n' "${packages[@]##*/}" | sort | uniq -d
-          )
-          if [[ -n "$duplicates" ]]; then
-            printf 'duplicate release asset name(s):\n%s\n' "$duplicates" >&2
-            exit 1
-          fi
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" "${packages[@]}" --clobber
+            gh release upload "$GITHUB_REF_NAME" release/* --clobber
           else
-            gh release create "$GITHUB_REF_NAME" "${packages[@]}" \
+            gh release create "$GITHUB_REF_NAME" release/* \
               --generate-notes --title "circud $GITHUB_REF_NAME"
           fi

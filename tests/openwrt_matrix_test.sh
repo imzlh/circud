@@ -1,0 +1,76 @@
+#!/bin/sh
+set -eu
+
+source_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+workflow=$source_root/.github/workflows/openwrt-packages.yml
+
+for channel in ipk apk; do
+    matrix=$(sh "$source_root/scripts/openwrt-matrix.sh" "$channel")
+    printf '%s\n' "$matrix" | jq -e --arg channel "$channel" '
+        length == 19 and
+        all(.[];
+            .channel == $channel and
+            (.arch | test("^[A-Za-z0-9_.+-]+$")) and
+            (.target | test("^[A-Za-z0-9_.+-]+$")) and
+            (.subtarget | test("^[A-Za-z0-9_.+-]+$")))
+    ' >/dev/null
+    printf '%s\n' "$matrix" | jq -e \
+        'group_by([.arch, .target, .subtarget]) | all(.[]; length == 1)' \
+        >/dev/null
+done
+
+ipk=$(sh "$source_root/scripts/openwrt-matrix.sh" ipk)
+apk=$(sh "$source_root/scripts/openwrt-matrix.sh" apk)
+jq -cn --argjson ipk "$ipk" --argjson apk "$apk" \
+    '$ipk + $apk | length == 38' | grep -Fx true >/dev/null
+
+for arch in \
+    aarch64_cortex-a53 \
+    arm_cortex-a5_vfpv4 \
+    i386_pentium4 \
+    mips_24kc \
+    mipsel_74kc \
+    riscv64_generic
+do
+    sh "$source_root/scripts/openwrt-matrix.sh" apk |
+        jq -e --arg arch "$arch" 'any(.[]; .arch == $arch)' >/dev/null
+done
+
+printf '%s\n' "$ipk" | jq -e '
+    any(.[]; .arch == "riscv64_riscv64" and .target == "sifiveu" and
+        .subtarget == "generic")
+' >/dev/null
+printf '%s\n' "$apk" | jq -e '
+    any(.[]; .arch == "riscv64_generic" and .target == "sifiveu" and
+        .subtarget == "generic")
+' >/dev/null
+
+# mt7620 and mt7621 deliberately retain separate SDK rows even though the
+# packages carry the same OpenWrt architecture label.
+printf '%s\n' "$ipk" | jq -e '
+    ([.[] | select(.arch == "mipsel_24kc") | .subtarget] | sort) ==
+        ["mt7620", "mt7621"]
+' >/dev/null
+
+grep -Fq 'fromJSON(needs.select.outputs.all)' "$workflow"
+grep -Fq 'sh scripts/build-openwrt.sh "$CHANNEL"' "$workflow"
+grep -Fq 'package architecture mismatch' "$source_root/scripts/build-openwrt.sh"
+grep -Fq './scripts/feeds install -p base zlib libopenssl ca-certificates' \
+    "$source_root/scripts/build-openwrt.sh"
+grep -Fq 'scripts/normalize-openwrt-depends.sh' \
+    "$source_root/scripts/build-openwrt.sh"
+grep -Fq 'libnghttp2' "$source_root/scripts/build-openwrt.sh"
+if grep -Eq './scripts/feeds install[^[:space:]]*(.*[[:space:]])?libcurl([[:space:]]|$)' \
+    "$source_root/scripts/build-openwrt.sh"; then
+    printf 'build script must not install libcurl through scripts/feeds\n' >&2
+    exit 1
+fi
+grep -Fq './scripts/feeds install -p circud circud' \
+    "$source_root/scripts/build-openwrt.sh"
+grep -Fq 'Validate IPK payload' "$workflow"
+grep -Fq 'Validate LuCI IPK payload' "$workflow"
+grep -Fq 'verify_payload_root' "$source_root/scripts/build-openwrt.sh"
+grep -Fq 'verify_payload_root' "$source_root/scripts/build-luci-openwrt.sh"
+grep -Fq 'name: circud-openwrt-${{ matrix.channel }}-${{ matrix.arch }}-${{ matrix.target }}-${{ matrix.subtarget }}' "$workflow"
+
+printf 'OpenWrt architecture matrix tests passed\n'

@@ -14,8 +14,8 @@ PKG_BUILD_FLAGS:=no-mips16
 PKG_INSTALL:=1
 
 # The SDK evaluates package Makefiles with CURDIR set to the SDK root. Resolve
-# this feed Makefile first so src-link feeds (including gh-action-sdk's /feed
-# mount) still locate the circud checkout rather than the SDK tree.
+# this feed Makefile first so a src-link feed still locates the circud checkout
+# rather than the SDK tree.
 CIRCUD_SOURCE_DIR:=$(abspath $(dir $(CIRCUD_PACKAGE_MAKEFILE))/../../..)
 CIRCUJS_SOURCE_DIR:=$(CIRCUD_SOURCE_DIR)/.ci/circu.js
 LLHTTP_SOURCE_DIR:=$(CIRCUD_SOURCE_DIR)/.ci/llhttp
