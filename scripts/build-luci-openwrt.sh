@@ -85,7 +85,7 @@ sdk_dir=$(find "$work" -mindepth 1 -maxdepth 1 -type d -name 'openwrt-sdk-*' | h
     ./scripts/feeds install -p luci luci-base ucode-mod-socket
     ./scripts/feeds install -p circud circud luci-app-circud
     for recipe in \
-        package/feeds/base/script-utils \
+        package/feeds/base/util-linux \
         package/feeds/base/zlib \
         package/feeds/base/ca-certificates \
         package/feeds/packages/boost \

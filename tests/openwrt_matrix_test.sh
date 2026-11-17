@@ -121,7 +121,7 @@ grep -Fq 'CONFIG_PACKAGE_luci-app-circud=m' \
     "$source_root/scripts/build-luci-openwrt.sh"
 grep -Fq 'package/circud/compile package/luci-app-circud/compile' \
     "$source_root/scripts/build-luci-openwrt.sh"
-grep -Fq 'package/feeds/base/script-utils' \
+grep -Fq 'package/feeds/base/util-linux' \
     "$source_root/scripts/build-luci-openwrt.sh"
 
 printf 'OpenWrt architecture matrix tests passed\n'
