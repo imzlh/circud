@@ -73,4 +73,15 @@ grep -Fq 'verify_payload_root' "$source_root/scripts/build-openwrt.sh"
 grep -Fq 'verify_payload_root' "$source_root/scripts/build-luci-openwrt.sh"
 grep -Fq 'name: circud-openwrt-${{ matrix.channel }}-${{ matrix.arch }}-${{ matrix.target }}-${{ matrix.subtarget }}' "$workflow"
 
+# luci-app-circud depends on circud, so the LuCI job must prepare the same
+# external source trees as the daemon jobs.
+luci_job=$(awk '
+    /^  luci:$/ { in_luci = 1 }
+    in_luci && /^  [A-Za-z0-9_-]+:$/ && !/^  luci:$/ { exit }
+    in_luci { print }
+' "$workflow")
+printf '%s\n' "$luci_job" | grep -Fq 'path: .ci/circu.js'
+printf '%s\n' "$luci_job" | grep -Fq 'path: .ci/llhttp'
+printf '%s\n' "$luci_job" | grep -Fq 'Verify circu.js ABI'
+
 printf 'OpenWrt architecture matrix tests passed\n'

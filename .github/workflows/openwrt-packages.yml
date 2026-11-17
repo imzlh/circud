@@ -170,6 +170,27 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.circu_repository || 'imzlh/circu.js' }}
+          ref: ${{ inputs.circu_ref || 'master' }}
+          path: .ci/circu.js
+          submodules: recursive
+          fetch-depth: 1
+      - uses: actions/checkout@v4
+        with:
+          repository: nodejs/llhttp
+          ref: release/v9.3.0
+          path: .ci/llhttp
+          fetch-depth: 1
+      - name: Verify circu.js ABI
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .ci/circu.js/src/message_clone.c
+          test -f .ci/circu.js/src/message_clone.h
+          grep -Fq 'TJS_EvBusEmit' .ci/circu.js/src/tjs.h
+          grep -Fq 'src/message_clone.c' .ci/circu.js/CMakeLists.txt
       - name: Test LuCI configuration model
         shell: bash
         run: |
