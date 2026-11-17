@@ -125,10 +125,26 @@ jobs:
           set -euo pipefail
           package="dist/openwrt/$CHANNEL/$ARCH/circud-openwrt-${CHANNEL}-${ARCH}-${TARGET}-${SUBTARGET}.ipk"
           test -s "$package"
-          listing=$(tar -tf "$package")
-          grep -Fxq './control.tar.gz' <<<"$listing"
-          grep -Fxq './data.tar.gz' <<<"$listing"
-          payload=$(tar -xOf "$package" ./data.tar.gz | tar -tzf -)
+          work=$(mktemp -d)
+          trap 'rm -rf -- "$work"' EXIT HUP INT TERM
+          if tar -tf "$package" >/dev/null 2>&1; then
+            tar -xf "$package" -C "$work"
+          elif ar t "$package" >/dev/null 2>&1; then
+            (cd "$work" && ar x "$package")
+          else
+            echo 'IPK has no supported archive format' >&2
+            exit 1
+          fi
+          data_archive=$(find "$work" -maxdepth 1 -type f \
+            \( -name 'data.tar' -o -name 'data.tar.gz' -o -name 'data.tar.zst' \
+               -o -name 'data.tar.xz' -o -name 'data.tar.bz2' \) \
+            -print | head -n 1)
+          test -n "$data_archive"
+          case "$data_archive" in
+            *.tar.zst) tar --zstd -xOf "$data_archive" > "$work/data.tar" ;;
+            *) tar -xOf "$data_archive" > "$work/data.tar" ;;
+          esac
+          payload=$(tar -tf "$work/data.tar")
           grep -Fxq './usr/bin/circud' <<<"$payload"
           grep -Fxq './etc/init.d/circud' <<<"$payload"
           grep -Fxq './etc/circud/config.json' <<<"$payload"

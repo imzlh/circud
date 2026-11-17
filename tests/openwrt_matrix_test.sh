@@ -87,6 +87,7 @@ grep -Fq './scripts/feeds install -p circud circud' \
     "$source_root/scripts/build-openwrt.sh"
 grep -Fq 'Validate IPK payload' "$workflow"
 grep -Fq 'Validate LuCI IPK payload' "$workflow"
+grep -Fq "name 'data.tar.zst'" "$workflow"
 grep -Fq 'verify_payload_root' "$source_root/scripts/build-openwrt.sh"
 grep -Fq 'verify_payload_root' "$source_root/scripts/build-luci-openwrt.sh"
 grep -Fq 'name: circud-openwrt-${{ matrix.channel }}-${{ matrix.arch }}-${{ matrix.target }}-${{ matrix.subtarget }}' "$workflow"
@@ -105,11 +106,11 @@ grep -Fq '[ -f feeds.conf ] || cp feeds.conf.default feeds.conf' \
     "$source_root/scripts/build-luci-openwrt.sh"
 grep -Fq './scripts/feeds update base packages luci circud' \
     "$source_root/scripts/build-luci-openwrt.sh"
-grep -Fq './scripts/feeds install -p base script-utils zlib ca-certificates' \
+grep -Fq './scripts/feeds install -p base util-linux zlib ca-certificates' \
     "$source_root/scripts/build-luci-openwrt.sh"
-grep -Fq './scripts/feeds install -p packages boost-json minizip' \
+grep -Fq './scripts/feeds install -p packages boost minizip sqlite' \
     "$source_root/scripts/build-luci-openwrt.sh"
-grep -Fq 'libsqlite3 libffi libexpat libnghttp2' \
+grep -Fq 'libffi expat nghttp2' \
     "$source_root/scripts/build-luci-openwrt.sh"
 grep -Fq 'package/feeds/packages/boost' \
     "$source_root/scripts/build-luci-openwrt.sh"
