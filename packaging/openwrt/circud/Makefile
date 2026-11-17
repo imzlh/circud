@@ -3,8 +3,8 @@ CIRCUD_PACKAGE_MAKEFILE:=$(realpath $(lastword $(MAKEFILE_LIST)))
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=circud
-PKG_VERSION:=0.1.0
-PKG_RELEASE:=2
+PKG_VERSION:=0.1.1
+PKG_RELEASE:=1
 
 PKG_MAINTAINER:=circud contributors
 PKG_LICENSE:=MIT
