@@ -87,25 +87,26 @@ sdk_dir=$(find "$work" -mindepth 1 -maxdepth 1 -type d -name 'openwrt-sdk-*' | h
         libsqlite3 libffi libexpat libnghttp2
     ./scripts/feeds install -p luci luci-base ucode-mod-socket
     ./scripts/feeds install -p circud circud luci-app-circud
-    for recipe in \
-        package/feeds/base/util-linux \
-        package/feeds/base/zlib \
-        package/feeds/base/ca-certificates \
-        package/feeds/packages/boost \
-        package/feeds/packages/sqlite3 \
-        package/feeds/packages/minizip \
-        package/feeds/packages/libffi \
-        package/feeds/packages/expat \
-        package/feeds/packages/nghttp2 \
-        package/feeds/luci/luci-base \
-        package/feeds/base/ucode \
-        package/feeds/circud/circud \
-        package/feeds/circud/luci-app-circud
+    # Resolve each selected package through the feed index instead of
+    # assuming a package-category layout. Snapshot and release feeds differ
+    # (libffi was repository base in one SDK and packages in another).
+    for package_name in \
+        script-utils zlib ca-certificates boost-json minizip libsqlite3 \
+        libffi libexpat libnghttp2 luci-base ucode-mod-socket \
+        circud luci-app-circud
     do
-        [ -f "$recipe/Makefile" ] || {
-            printf 'feeds install did not produce recipe %s\n' "$recipe" >&2
+        source_makefile=$(awk -v name="$package_name" '
+            /^Package: / { package_name = substr($0, 10) }
+            /^Source-Makefile: / && package_name == name {
+                print substr($0, 18)
+                exit
+            }
+        ' feeds/*.tmp/.packageinfo feeds/*.tmp/info/.packageinfo-* 2>/dev/null)
+        if [ -z "$source_makefile" ] || [ ! -f "$source_makefile" ]; then
+            printf 'feeds install did not provide a recipe for %s\n' \
+                "$package_name" >&2
             exit 1
-        }
+        fi
     done
     [ -f feeds/packages/net/curl/Makefile ] || {
         printf 'packages feed does not contain the curl recipe\n' >&2

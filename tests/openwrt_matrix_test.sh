@@ -114,8 +114,6 @@ grep -Fq './scripts/feeds install -p packages boost-json minizip' \
     "$source_root/scripts/build-luci-openwrt.sh"
 grep -Fq 'libsqlite3 libffi libexpat libnghttp2' \
     "$source_root/scripts/build-luci-openwrt.sh"
-grep -Fq 'package/feeds/packages/boost' \
-    "$source_root/scripts/build-luci-openwrt.sh"
 grep -Fq 'scripts/normalize-openwrt-depends.sh' \
     "$source_root/scripts/build-luci-openwrt.sh"
 grep -Fq './scripts/feeds install -p circud circud luci-app-circud' \
@@ -124,7 +122,7 @@ grep -Fq 'CONFIG_PACKAGE_luci-app-circud=m' \
     "$source_root/scripts/build-luci-openwrt.sh"
 grep -Fq 'package/circud/compile package/luci-app-circud/compile' \
     "$source_root/scripts/build-luci-openwrt.sh"
-grep -Fq 'package/feeds/base/util-linux' \
+grep -Fq 'Source-Makefile:' \
     "$source_root/scripts/build-luci-openwrt.sh"
 
 printf 'OpenWrt architecture matrix tests passed\n'
