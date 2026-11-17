@@ -88,6 +88,8 @@ grep -Fq './scripts/feeds install -p circud circud' \
 grep -Fq 'Validate IPK payload' "$workflow"
 grep -Fq 'Validate LuCI IPK payload' "$workflow"
 grep -Fq "name 'data.tar.zst'" "$workflow"
+grep -Fq 'gzip -t "$package"' "$workflow"
+grep -Fq 'gzip -dc "$package" > "$work/outer.tar"' "$workflow"
 grep -Fq 'verify_payload_root' "$source_root/scripts/build-openwrt.sh"
 grep -Fq 'verify_payload_root' "$source_root/scripts/build-luci-openwrt.sh"
 grep -Fq 'name: circud-openwrt-${{ matrix.channel }}-${{ matrix.arch }}-${{ matrix.target }}-${{ matrix.subtarget }}' "$workflow"

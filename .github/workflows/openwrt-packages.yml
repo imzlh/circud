@@ -127,7 +127,10 @@ jobs:
           test -s "$package"
           work=$(mktemp -d)
           trap 'rm -rf -- "$work"' EXIT HUP INT TERM
-          if tar -tf "$package" >/dev/null 2>&1; then
+          if gzip -t "$package" 2>/dev/null; then
+            gzip -dc "$package" > "$work/outer.tar"
+            tar -xf "$work/outer.tar" -C "$work"
+          elif tar -tf "$package" >/dev/null 2>&1; then
             tar -xf "$package" -C "$work"
           elif ar t "$package" >/dev/null 2>&1; then
             (cd "$work" && ar x "$package")
@@ -142,7 +145,13 @@ jobs:
           test -n "$data_archive"
           case "$data_archive" in
             *.tar.zst) tar --zstd -xOf "$data_archive" > "$work/data.tar" ;;
-            *) tar -xOf "$data_archive" > "$work/data.tar" ;;
+            *)
+              if gzip -t "$data_archive" 2>/dev/null; then
+                gzip -dc "$data_archive" > "$work/data.tar"
+              else
+                cp "$data_archive" "$work/data.tar"
+              fi
+              ;;
           esac
           payload=$(tar -tf "$work/data.tar")
           grep -Fxq './usr/bin/circud' <<<"$payload"
@@ -260,8 +269,28 @@ jobs:
           test -s "$package"
           work=$(mktemp -d)
           trap 'rm -rf -- "$work"' EXIT HUP INT TERM
-          tar -xf "$package" -C "$work"
-          payload=$(tar -tzf "$work/data.tar.gz")
+          if gzip -t "$package" 2>/dev/null; then
+            gzip -dc "$package" > "$work/outer.tar"
+            tar -xf "$work/outer.tar" -C "$work"
+          else
+            tar -xf "$package" -C "$work"
+          fi
+          data_archive=$(find "$work" -maxdepth 1 -type f \
+            \( -name 'data.tar' -o -name 'data.tar.gz' -o -name 'data.tar.zst' \
+               -o -name 'data.tar.xz' -o -name 'data.tar.bz2' \) \
+            -print | head -n 1)
+          test -n "$data_archive"
+          case "$data_archive" in
+            *.tar.zst) tar --zstd -xOf "$data_archive" > "$work/data.tar" ;;
+            *)
+              if gzip -t "$data_archive" 2>/dev/null; then
+                gzip -dc "$data_archive" > "$work/data.tar"
+              else
+                cp "$data_archive" "$work/data.tar"
+              fi
+              ;;
+          esac
+          payload=$(tar -tf "$work/data.tar")
           grep -Fxq './www/luci-static/resources/view/circud/overview.js' <<<"$payload"
           grep -Fxq './usr/share/luci/menu.d/luci-app-circud.json' <<<"$payload"
           grep -Fxq './usr/share/rpcd/acl.d/luci-app-circud.json' <<<"$payload"
