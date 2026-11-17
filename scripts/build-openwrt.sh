@@ -104,10 +104,6 @@ if ! command -v ar >/dev/null 2>&1; then
     printf 'ar is required to validate the IPK payload\n' >&2
     exit 1
 fi
-(
-    cd "$sdk_dir"
-    ./scripts/feeds update -a
-)
 
 [ -f "$source_root/.ci/circu.js/src/message_clone.c" ] || {
     printf 'input checkout lacks circu.js message-clone ABI\n' >&2
@@ -120,17 +116,38 @@ fi
 
 (
     cd "$sdk_dir"
+    # Fresh SDK archives normally contain only feeds.conf.default. Create the
+    # working copy before adding the local feed; appending to a missing file
+    # would otherwise replace the SDK's pinned base and packages sources.
+    [ -f feeds.conf ] || cp feeds.conf.default feeds.conf
+    sed -i '/^src-link circud /d' feeds.conf
     printf '%s\n' "src-link circud $source_root/packaging/openwrt" >> feeds.conf
-    ./scripts/feeds update circud
+    ./scripts/feeds update base packages circud
     # Install leaf dependencies before circud so feeds metadata can resolve its
     # complete dependency set. Do not ask feeds to install curl: that follows
     # every conditional recipe edge (LDAP, SSH, HTTP/3, alternate TLS backends)
     # and builds unrelated packages. libcurl is linked directly below after
     # installing only its OpenSSL, zlib and HTTP/2 closure.
-    ./scripts/feeds install -p base zlib libopenssl ca-certificates
-    ./scripts/feeds install -p packages boost-json libsqlite3 minizip \
-        libffi libexpat libnghttp2
+    ./scripts/feeds install -p base zlib ca-certificates
+    ./scripts/feeds install -p packages boost-json minizip \
+        libsqlite3 libffi libexpat libnghttp2
     ./scripts/feeds install -p circud circud
+    for recipe in \
+        package/feeds/base/zlib \
+        package/feeds/base/ca-certificates \
+        package/feeds/packages/boost \
+        package/feeds/packages/sqlite3 \
+        package/feeds/packages/minizip \
+        package/feeds/packages/libffi \
+        package/feeds/packages/expat \
+        package/feeds/packages/nghttp2 \
+        package/feeds/circud/circud
+    do
+        [ -f "$recipe/Makefile" ] || {
+            printf 'feeds install did not produce recipe %s\n' "$recipe" >&2
+            exit 1
+        }
+    done
 )
 
 cd "$sdk_dir"
@@ -172,35 +189,124 @@ elif [ -e "$curl_link" ]; then
 fi
 ln -s ../../../feeds/packages/net/curl "$curl_link"
 
-make defconfig
-for package_name in libcurl libopenssl libnghttp2 zlib circud; do
-    grep -Eq "^CONFIG_PACKAGE_${package_name}=[my]$" .config ||
-        printf '[circud-openwrt] dependency %s not selected before circud\n' \
-            "$package_name"
+sdk_defconfig() {
+    phase=$1
+    defconfig_log=$work/defconfig-$phase.log
+    if make defconfig > "$defconfig_log" 2>&1; then
+        :
+    else
+        status=$?
+        cat "$defconfig_log" >&2
+        printf 'SDK defconfig failed during %s (exit %s)\n' \
+            "$phase" "$status" >&2
+        exit 1
+    fi
+    cat "$defconfig_log"
+    if grep -Fqi 'recursive dependency detected' "$defconfig_log"; then
+        printf 'SDK defconfig reported a recursive dependency during %s\n' \
+            "$phase" >&2
+        exit 1
+    fi
+}
+
+# Published SDKs default ALL to y, which expands to every package. Clear the
+# three buildbot switches before the first defconfig; once expanded, their
+# blanket PACKAGE_*=m selections are not reliably undone.
+touch "$sdk_dir/.config"
+for config_name in ALL ALL_NONSHARED ALL_KMODS; do
+    sed -i \
+        "/^CONFIG_${config_name}=/d;/^# CONFIG_${config_name} is not set$/d" \
+        "$sdk_dir/.config"
 done
-sed -i '/^# CONFIG_PACKAGE_circud is not set$/d;/^CONFIG_PACKAGE_circud=/d' .config
 printf '%s\n' \
+    '# CONFIG_ALL is not set' \
+    '# CONFIG_ALL_NONSHARED is not set' \
+    '# CONFIG_ALL_KMODS is not set' >> "$sdk_dir/.config"
+sdk_defconfig initial
+
+for config_name in \
+    PACKAGE_circud \
+    PACKAGE_libcurl PACKAGE_libopenssl PACKAGE_libnghttp2 PACKAGE_zlib \
+    LIBCURL_WOLFSSL LIBCURL_GNUTLS LIBCURL_OPENSSL \
+    LIBCURL_MBEDTLS LIBCURL_NOSSL LIBCURL_ZLIB LIBCURL_ZSTD \
+    LIBCURL_THREADED_RESOLVER LIBCURL_LDAP LIBCURL_LIBIDN2 \
+    LIBCURL_SSH2 LIBCURL_HTTP2 LIBCURL_HTTP3 LIBCURL_KERBEROS_AUTH \
+    PACKAGE_libopenssl-afalg PACKAGE_libopenssl-devcrypto \
+    PACKAGE_libopenssl-padlock \
+    OPENSSL_WITH_COMPRESSION OPENSSL_ENGINE_BUILTIN_AFALG \
+    OPENSSL_ENGINE_BUILTIN_DEVCRYPTO OPENSSL_ENGINE_BUILTIN_PADLOCK
+do
+    sed -i \
+        "/^CONFIG_${config_name}=/d;/^# CONFIG_${config_name} is not set$/d" \
+        "$sdk_dir/.config"
+done
+printf '%s\n' \
+    'CONFIG_PACKAGE_circud=m' \
     'CONFIG_PACKAGE_libcurl=m' \
     'CONFIG_PACKAGE_libopenssl=m' \
     'CONFIG_PACKAGE_libnghttp2=m' \
     'CONFIG_PACKAGE_zlib=m' \
-    'CONFIG_PACKAGE_circud=m' >> .config
-make defconfig
-for package_name in libcurl libopenssl libnghttp2 zlib circud; do
-    grep -Eq "^CONFIG_PACKAGE_${package_name}=[my]$" .config || {
+    'CONFIG_LIBCURL_OPENSSL=y' \
+    'CONFIG_LIBCURL_HTTP2=y' \
+    'CONFIG_LIBCURL_ZLIB=y' \
+    '# CONFIG_LIBCURL_WOLFSSL is not set' \
+    '# CONFIG_LIBCURL_GNUTLS is not set' \
+    '# CONFIG_LIBCURL_MBEDTLS is not set' \
+    '# CONFIG_LIBCURL_NOSSL is not set' \
+    '# CONFIG_LIBCURL_ZSTD is not set' \
+    '# CONFIG_LIBCURL_THREADED_RESOLVER is not set' \
+    '# CONFIG_LIBCURL_LDAP is not set' \
+    '# CONFIG_LIBCURL_LIBIDN2 is not set' \
+    '# CONFIG_LIBCURL_SSH2 is not set' \
+    '# CONFIG_LIBCURL_HTTP3 is not set' \
+    '# CONFIG_LIBCURL_KERBEROS_AUTH is not set' \
+    '# CONFIG_PACKAGE_libopenssl-afalg is not set' \
+    '# CONFIG_PACKAGE_libopenssl-devcrypto is not set' \
+    '# CONFIG_PACKAGE_libopenssl-padlock is not set' \
+    '# CONFIG_OPENSSL_WITH_COMPRESSION is not set' \
+    '# CONFIG_OPENSSL_ENGINE_BUILTIN_AFALG is not set' \
+    '# CONFIG_OPENSSL_ENGINE_BUILTIN_DEVCRYPTO is not set' \
+    '# CONFIG_OPENSSL_ENGINE_BUILTIN_PADLOCK is not set' >> "$sdk_dir/.config"
+sdk_defconfig circud
+for package_name in \
+    circud libcurl libopenssl libnghttp2 zlib boost-json libsqlite3 minizip \
+    libexpat libffi
+do
+    grep -Eq "^CONFIG_PACKAGE_${package_name}=[my]$" "$sdk_dir/.config" || {
         printf 'SDK defconfig did not select %s\n' "$package_name" >&2
         exit 1
     }
 done
+for config_name in LIBCURL_OPENSSL LIBCURL_HTTP2 LIBCURL_ZLIB; do
+    grep -q "^CONFIG_${config_name}=y$" "$sdk_dir/.config" || {
+        printf 'SDK defconfig did not retain CONFIG_%s=y\n' "$config_name" >&2
+        exit 1
+    }
+done
+for config_name in \
+    LIBCURL_WOLFSSL LIBCURL_GNUTLS LIBCURL_MBEDTLS LIBCURL_NOSSL \
+    LIBCURL_ZSTD LIBCURL_THREADED_RESOLVER LIBCURL_LDAP \
+    LIBCURL_LIBIDN2 LIBCURL_SSH2 LIBCURL_HTTP3 LIBCURL_KERBEROS_AUTH \
+    PACKAGE_libopenssl-afalg PACKAGE_libopenssl-devcrypto \
+    PACKAGE_libopenssl-padlock OPENSSL_WITH_COMPRESSION \
+    OPENSSL_ENGINE_BUILTIN_AFALG OPENSSL_ENGINE_BUILTIN_DEVCRYPTO \
+    OPENSSL_ENGINE_BUILTIN_PADLOCK
+do
+    if grep -q "^CONFIG_${config_name}=" "$sdk_dir/.config"; then
+        printf 'SDK defconfig selected disabled CONFIG_%s\n' \
+            "$config_name" >&2
+        exit 1
+    fi
+done
 
-actual_arch=$(sed -n 's/^CONFIG_TARGET_ARCH_PACKAGES=//p' .config | tr -d '"' | head -n 1)
+actual_arch=$(sed -n 's/^CONFIG_TARGET_ARCH_PACKAGES=//p' "$sdk_dir/.config" | tr -d '"' | head -n 1)
 [ -n "$actual_arch" ] || { printf 'SDK has no CONFIG_TARGET_ARCH_PACKAGES\n' >&2; exit 1; }
 [ "$actual_arch" = "$expected_arch" ] || {
     printf 'package architecture mismatch: requested %s, SDK reports %s\n' \
         "$expected_arch" "$actual_arch" >&2
     exit 1
 }
-grep -q '^CONFIG_PACKAGE_circud=m$' .config || { printf 'circud was not selected\n' >&2; exit 1; }
+grep -q '^CONFIG_PACKAGE_circud=m$' "$sdk_dir/.config" || { printf 'circud was not selected\n' >&2; exit 1; }
 
 if ! make -j2 package/circud/compile V=s LUCI_APP_CIRCUD_TEST=1; then
     printf '%s\n' '[circud-openwrt] parallel build failed; retrying serially' >&2

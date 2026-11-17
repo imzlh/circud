@@ -75,25 +75,175 @@ sdk_dir=$(find "$work" -mindepth 1 -maxdepth 1 -type d -name 'openwrt-sdk-*' | h
 
 (
     cd "$sdk_dir"
-    ./scripts/feeds update -a
+    [ -f feeds.conf ] || cp feeds.conf.default feeds.conf
+    sed -i '/^src-link circud /d' feeds.conf
     printf '%s\n' "src-link circud $source_root/packaging/openwrt" >> feeds.conf
-    ./scripts/feeds update circud
-    ./scripts/feeds install -p base script-utils
+    ./scripts/feeds update base packages luci circud
+    ./scripts/feeds install -p base script-utils zlib ca-certificates
+    ./scripts/feeds install -p packages boost-json minizip \
+        libsqlite3 libffi libexpat libnghttp2
     ./scripts/feeds install -p luci luci-base ucode-mod-socket
-    ./scripts/feeds install -p circud luci-app-circud
-    make defconfig
-    sed -i \
-        '/^# CONFIG_PACKAGE_luci-app-circud is not set$/d;/^CONFIG_PACKAGE_luci-app-circud=/d' \
-        .config
-    printf '%s\n' 'CONFIG_PACKAGE_luci-app-circud=m' >> .config
-    make defconfig
+    ./scripts/feeds install -p circud circud luci-app-circud
+    for recipe in \
+        package/feeds/base/script-utils \
+        package/feeds/base/zlib \
+        package/feeds/base/ca-certificates \
+        package/feeds/packages/boost \
+        package/feeds/packages/sqlite3 \
+        package/feeds/packages/minizip \
+        package/feeds/packages/libffi \
+        package/feeds/packages/expat \
+        package/feeds/packages/nghttp2 \
+        package/feeds/luci/luci-base \
+        package/feeds/luci/ucode-mod-socket \
+        package/feeds/circud/circud \
+        package/feeds/circud/luci-app-circud
+    do
+        [ -f "$recipe/Makefile" ] || {
+            printf 'feeds install did not produce recipe %s\n' "$recipe" >&2
+            exit 1
+        }
+    done
+    [ -f feeds/packages/net/curl/Makefile ] || {
+        printf 'packages feed does not contain the curl recipe\n' >&2
+        exit 1
+    }
+    openssl_recipe=
+    for candidate in feeds/base/package/libs/openssl feeds/base/libs/openssl; do
+        if [ -f "$candidate/Makefile" ]; then
+            [ -z "$openssl_recipe" ] || {
+                printf 'base feed contains ambiguous OpenSSL recipes\n' >&2
+                exit 1
+            }
+            openssl_recipe=$candidate
+        fi
+    done
+    [ -n "$openssl_recipe" ] || {
+        printf 'base feed lacks a supported OpenSSL recipe layout\n' >&2
+        exit 1
+    }
+    sh "$source_root/scripts/normalize-openwrt-depends.sh" \
+        feeds/packages/net/curl/Makefile "$openssl_recipe/Makefile"
+    mkdir -p package/feeds/base package/feeds/packages
+    openssl_link=package/feeds/base/openssl
+    if [ -L "$openssl_link" ]; then
+        rm -f -- "$openssl_link"
+    elif [ -e "$openssl_link" ]; then
+        printf 'refusing to replace non-symlink %s\n' "$openssl_link" >&2
+        exit 1
+    fi
+    ln -s "../../../$openssl_recipe" "$openssl_link"
+    curl_link=package/feeds/packages/curl
+    if [ -L "$curl_link" ]; then
+        rm -f -- "$curl_link"
+    elif [ -e "$curl_link" ]; then
+        printf 'refusing to replace non-symlink %s\n' "$curl_link" >&2
+        exit 1
+    fi
+    ln -s ../../../feeds/packages/net/curl "$curl_link"
+
+    sdk_defconfig() {
+        phase=$1
+        defconfig_log=$work/defconfig-luci-$phase.log
+        if make defconfig > "$defconfig_log" 2>&1; then
+            :
+        else
+            status=$?
+            cat "$defconfig_log" >&2
+            printf 'LuCI SDK defconfig failed during %s (exit %s)\n' \
+                "$phase" "$status" >&2
+            exit 1
+        fi
+        cat "$defconfig_log"
+        if grep -Fqi 'recursive dependency detected' "$defconfig_log"; then
+            printf 'LuCI SDK defconfig reported a recursive dependency during %s\n' \
+                "$phase" >&2
+            exit 1
+        fi
+    }
+
+    touch .config
+    for config_name in ALL ALL_NONSHARED ALL_KMODS; do
+        sed -i \
+            "/^CONFIG_${config_name}=/d;/^# CONFIG_${config_name} is not set$/d" \
+            .config
+    done
+    printf '%s\n' \
+        '# CONFIG_ALL is not set' \
+        '# CONFIG_ALL_NONSHARED is not set' \
+        '# CONFIG_ALL_KMODS is not set' >> .config
+    sdk_defconfig initial
+
+    for config_name in \
+        PACKAGE_circud PACKAGE_luci-app-circud \
+        PACKAGE_libcurl PACKAGE_libopenssl PACKAGE_libnghttp2 PACKAGE_zlib \
+        LIBCURL_WOLFSSL LIBCURL_GNUTLS LIBCURL_OPENSSL \
+        LIBCURL_MBEDTLS LIBCURL_NOSSL LIBCURL_ZLIB LIBCURL_ZSTD \
+        LIBCURL_THREADED_RESOLVER LIBCURL_LDAP LIBCURL_LIBIDN2 \
+        LIBCURL_SSH2 LIBCURL_HTTP2 LIBCURL_HTTP3 LIBCURL_KERBEROS_AUTH \
+        PACKAGE_libopenssl-afalg PACKAGE_libopenssl-devcrypto \
+        PACKAGE_libopenssl-padlock \
+        OPENSSL_WITH_COMPRESSION OPENSSL_ENGINE_BUILTIN_AFALG \
+        OPENSSL_ENGINE_BUILTIN_DEVCRYPTO OPENSSL_ENGINE_BUILTIN_PADLOCK
+    do
+        sed -i \
+            "/^CONFIG_${config_name}=/d;/^# CONFIG_${config_name} is not set$/d" \
+            .config
+    done
+    printf '%s\n' \
+        'CONFIG_PACKAGE_circud=m' \
+        'CONFIG_PACKAGE_luci-app-circud=m' \
+        'CONFIG_PACKAGE_libcurl=m' \
+        'CONFIG_PACKAGE_libopenssl=m' \
+        'CONFIG_PACKAGE_libnghttp2=m' \
+        'CONFIG_PACKAGE_zlib=m' \
+        'CONFIG_LIBCURL_OPENSSL=y' \
+        'CONFIG_LIBCURL_HTTP2=y' \
+        'CONFIG_LIBCURL_ZLIB=y' \
+        '# CONFIG_LIBCURL_WOLFSSL is not set' \
+        '# CONFIG_LIBCURL_GNUTLS is not set' \
+        '# CONFIG_LIBCURL_MBEDTLS is not set' \
+        '# CONFIG_LIBCURL_NOSSL is not set' \
+        '# CONFIG_LIBCURL_ZSTD is not set' \
+        '# CONFIG_LIBCURL_THREADED_RESOLVER is not set' \
+        '# CONFIG_LIBCURL_LDAP is not set' \
+        '# CONFIG_LIBCURL_LIBIDN2 is not set' \
+        '# CONFIG_LIBCURL_SSH2 is not set' \
+        '# CONFIG_LIBCURL_HTTP3 is not set' \
+        '# CONFIG_LIBCURL_KERBEROS_AUTH is not set' \
+        '# CONFIG_PACKAGE_libopenssl-afalg is not set' \
+        '# CONFIG_PACKAGE_libopenssl-devcrypto is not set' \
+        '# CONFIG_PACKAGE_libopenssl-padlock is not set' \
+        '# CONFIG_OPENSSL_WITH_COMPRESSION is not set' \
+        '# CONFIG_OPENSSL_ENGINE_BUILTIN_AFALG is not set' \
+        '# CONFIG_OPENSSL_ENGINE_BUILTIN_DEVCRYPTO is not set' \
+        '# CONFIG_OPENSSL_ENGINE_BUILTIN_PADLOCK is not set' >> .config
+    sdk_defconfig circud
+    for package_name in \
+        luci-app-circud circud libcurl libopenssl libnghttp2 zlib boost-json \
+        libsqlite3 minizip libexpat libffi
+    do
+        grep -Eq "^CONFIG_PACKAGE_${package_name}=[my]$" .config || {
+            printf 'LuCI SDK defconfig did not select %s\n' "$package_name" >&2
+            exit 1
+        }
+    done
+    for config_name in LIBCURL_OPENSSL LIBCURL_HTTP2 LIBCURL_ZLIB; do
+        grep -q "^CONFIG_${config_name}=y$" .config || {
+            printf 'LuCI SDK defconfig did not retain CONFIG_%s=y\n' \
+                "$config_name" >&2
+            exit 1
+        }
+    done
     grep -q '^CONFIG_PACKAGE_luci-app-circud=m$' .config || {
         printf 'LuCI package was not selected\n' >&2
         exit 1
     }
-    if ! make -j2 package/luci-app-circud/compile V=s LUCI_APP_CIRCUD_TEST=1; then
+    if ! make -j2 package/circud/compile package/luci-app-circud/compile \
+        V=s LUCI_APP_CIRCUD_TEST=1; then
         printf '%s\n' '[circud-luci] parallel build failed; retrying serially' >&2
-        make -j1 package/luci-app-circud/compile V=s LUCI_APP_CIRCUD_TEST=1
+        make -j1 package/circud/compile package/luci-app-circud/compile \
+            V=s LUCI_APP_CIRCUD_TEST=1
     fi
 )
 

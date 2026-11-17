@@ -55,8 +55,19 @@ printf '%s\n' "$ipk" | jq -e '
 grep -Fq 'fromJSON(needs.select.outputs.all)' "$workflow"
 grep -Fq 'sh scripts/build-openwrt.sh "$CHANNEL"' "$workflow"
 grep -Fq 'package architecture mismatch' "$source_root/scripts/build-openwrt.sh"
-grep -Fq './scripts/feeds install -p base zlib libopenssl ca-certificates' \
+grep -Fq 'cancel-in-progress: true' "$workflow"
+grep -Fq '[ -f feeds.conf ] || cp feeds.conf.default feeds.conf' \
     "$source_root/scripts/build-openwrt.sh"
+grep -Fq './scripts/feeds update base packages circud' \
+    "$source_root/scripts/build-openwrt.sh"
+grep -Fq './scripts/feeds install -p base zlib ca-certificates' \
+    "$source_root/scripts/build-openwrt.sh"
+grep -Fq './scripts/feeds install -p packages boost-json minizip' \
+    "$source_root/scripts/build-openwrt.sh"
+grep -Fq 'libsqlite3 libffi libexpat libnghttp2' \
+    "$source_root/scripts/build-openwrt.sh"
+grep -Fq 'package/feeds/base/zlib' "$source_root/scripts/build-openwrt.sh"
+grep -Fq 'package/feeds/packages/boost' "$source_root/scripts/build-openwrt.sh"
 grep -Fq 'scripts/normalize-openwrt-depends.sh' \
     "$source_root/scripts/build-openwrt.sh"
 grep -Fq 'libnghttp2' "$source_root/scripts/build-openwrt.sh"
@@ -83,5 +94,27 @@ luci_job=$(awk '
 printf '%s\n' "$luci_job" | grep -Fq 'path: .ci/circu.js'
 printf '%s\n' "$luci_job" | grep -Fq 'path: .ci/llhttp'
 printf '%s\n' "$luci_job" | grep -Fq 'Verify circu.js ABI'
+grep -Fq '[ -f feeds.conf ] || cp feeds.conf.default feeds.conf' \
+    "$source_root/scripts/build-luci-openwrt.sh"
+grep -Fq './scripts/feeds update base packages luci circud' \
+    "$source_root/scripts/build-luci-openwrt.sh"
+grep -Fq './scripts/feeds install -p base script-utils zlib ca-certificates' \
+    "$source_root/scripts/build-luci-openwrt.sh"
+grep -Fq './scripts/feeds install -p packages boost-json minizip' \
+    "$source_root/scripts/build-luci-openwrt.sh"
+grep -Fq 'libsqlite3 libffi libexpat libnghttp2' \
+    "$source_root/scripts/build-luci-openwrt.sh"
+grep -Fq 'package/feeds/packages/boost' \
+    "$source_root/scripts/build-luci-openwrt.sh"
+grep -Fq 'scripts/normalize-openwrt-depends.sh' \
+    "$source_root/scripts/build-luci-openwrt.sh"
+grep -Fq './scripts/feeds install -p circud circud luci-app-circud' \
+    "$source_root/scripts/build-luci-openwrt.sh"
+grep -Fq 'CONFIG_PACKAGE_luci-app-circud=m' \
+    "$source_root/scripts/build-luci-openwrt.sh"
+grep -Fq 'package/circud/compile package/luci-app-circud/compile' \
+    "$source_root/scripts/build-luci-openwrt.sh"
+grep -Fq 'package/feeds/base/script-utils' \
+    "$source_root/scripts/build-luci-openwrt.sh"
 
 printf 'OpenWrt architecture matrix tests passed\n'
