@@ -10,6 +10,17 @@ output_dir=${5:?Missing output directory}
 source_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 matrix_file=$source_root/config/openwrt-targets.tsv
 
+# The build later descends into a temporary SDK. Resolve the caller's relative
+# output path first so packages are copied back into the workflow checkout.
+case $output_dir in
+    '') printf 'output directory must not be empty\n' >&2; exit 2 ;;
+esac
+invocation_dir=$(pwd -P)
+case $output_dir in
+    /*) ;;
+    *) output_dir=$invocation_dir/$output_dir ;;
+esac
+
 case $channel in ipk|apk) ;; *) printf 'invalid package channel: %s\n' "$channel" >&2; exit 2 ;; esac
 for value in "$expected_arch" "$sdk_target" "$sdk_subtarget"; do
     case $value in ''|*[!A-Za-z0-9_.+-]*) printf 'invalid matrix value: %s\n' "$value" >&2; exit 2 ;; esac
@@ -399,6 +410,7 @@ done
 mkdir -p "$output_dir"
 output_name="circud-openwrt-${channel}-${expected_arch}-${sdk_target}-${sdk_subtarget}.${channel}"
 cp "$package" "$output_dir/$output_name"
+buildinfo=$output_dir/$output_name.buildinfo
 {
     printf 'circud_version=%s\n' "$(sed -n 's/^PKG_VERSION:=//p' "$source_root/packaging/openwrt/circud/Makefile" | head -n 1)"
     printf 'openwrt_channel=%s\n' "$channel"
@@ -409,7 +421,7 @@ cp "$package" "$output_dir/$output_name"
     printf 'openwrt_sdk=%s\n' "$sdk_name"
     printf 'openwrt_sdk_sha256=%s\n' "$sdk_sha256"
     printf 'circu_js_commit=%s\n' "$(git -C "$source_root/.ci/circu.js" rev-parse HEAD)"
-} > "$output_dir/$output_name.buildinfo"
+} > "$buildinfo"
 
 printf '[circud-openwrt] %s/%s (%s, %s/%s)\n' \
     "$output_dir" "$output_name" "$actual_arch" "$sdk_target" "$sdk_subtarget"

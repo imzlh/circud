@@ -56,6 +56,14 @@ grep -Fq 'fromJSON(needs.select.outputs.all)' "$workflow"
 grep -Fq 'sh scripts/build-openwrt.sh "$CHANNEL"' "$workflow"
 grep -Fq 'package architecture mismatch' "$source_root/scripts/build-openwrt.sh"
 grep -Fq 'cancel-in-progress: true' "$workflow"
+for build_script in \
+    "$source_root/scripts/build-openwrt.sh" \
+    "$source_root/scripts/build-luci-openwrt.sh"
+do
+    grep -Fq 'invocation_dir=$(pwd -P)' "$build_script"
+    grep -Fq '/*) ;;' "$build_script"
+    grep -Fq '*) output_dir=$invocation_dir/$output_dir ;;' "$build_script"
+done
 grep -Fq '[ -f feeds.conf ] || cp feeds.conf.default feeds.conf' \
     "$source_root/scripts/build-openwrt.sh"
 grep -Fq './scripts/feeds update base packages circud' \
@@ -110,11 +118,15 @@ grep -Fq './scripts/feeds update base packages luci circud' \
     "$source_root/scripts/build-luci-openwrt.sh"
 grep -Fq './scripts/feeds install -p base script-utils zlib ca-certificates' \
     "$source_root/scripts/build-luci-openwrt.sh"
+grep -Fq './scripts/feeds install -p base ucode-mod-socket' \
+    "$source_root/scripts/build-luci-openwrt.sh"
 grep -Fq './scripts/feeds install -p packages boost-json minizip' \
     "$source_root/scripts/build-luci-openwrt.sh"
 grep -Fq 'libsqlite3 libffi libexpat libnghttp2' \
     "$source_root/scripts/build-luci-openwrt.sh"
 grep -Fq 'scripts/normalize-openwrt-depends.sh' \
+    "$source_root/scripts/build-luci-openwrt.sh"
+grep -Fq './scripts/feeds install -p luci luci-base' \
     "$source_root/scripts/build-luci-openwrt.sh"
 grep -Fq './scripts/feeds install -p circud circud luci-app-circud' \
     "$source_root/scripts/build-luci-openwrt.sh"
@@ -123,6 +135,10 @@ grep -Fq 'CONFIG_PACKAGE_luci-app-circud=m' \
 grep -Fq 'package/circud/compile package/luci-app-circud/compile' \
     "$source_root/scripts/build-luci-openwrt.sh"
 grep -Fq 'Source-Makefile:' \
+    "$source_root/scripts/build-luci-openwrt.sh"
+grep -Fq 'source_makefile = substr($0, 18)' \
+    "$source_root/scripts/build-luci-openwrt.sh"
+grep -Fq 'if (package_name == name && source_makefile != "")' \
     "$source_root/scripts/build-luci-openwrt.sh"
 
 printf 'OpenWrt architecture matrix tests passed\n'

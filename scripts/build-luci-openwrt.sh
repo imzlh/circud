@@ -10,6 +10,17 @@ output_dir=${5:?Missing output directory}
 case $channel in ipk|apk) ;; *) printf 'invalid package channel: %s\n' "$channel" >&2; exit 2 ;; esac
 source_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 
+# Resolve relative output paths against the invocation directory before any
+# SDK-relative work. This keeps the script safe to call from any working tree.
+case $output_dir in
+    '') printf 'output directory must not be empty\n' >&2; exit 2 ;;
+esac
+invocation_dir=$(pwd -P)
+case $output_dir in
+    /*) ;;
+    *) output_dir=$invocation_dir/$output_dir ;;
+esac
+
 for value in "$expected_arch" "$sdk_target" "$sdk_subtarget"; do
     case $value in ''|*[!A-Za-z0-9_.+-]*) printf 'invalid matrix value: %s\n' "$value" >&2; exit 2 ;; esac
 done
@@ -85,21 +96,30 @@ sdk_dir=$(find "$work" -mindepth 1 -maxdepth 1 -type d -name 'openwrt-sdk-*' | h
     ./scripts/feeds install -p base script-utils zlib ca-certificates
     ./scripts/feeds install -p packages boost-json minizip \
         libsqlite3 libffi libexpat libnghttp2
-    ./scripts/feeds install -p luci luci-base ucode-mod-socket
+    # ucode-mod-socket is provided by the SDK's base feed. LuCI's feed index
+    # does not contain it, even though LuCI recipes may depend on it.
+    ./scripts/feeds install -p luci luci-base
+    ./scripts/feeds install -p base ucode-mod-socket
     ./scripts/feeds install -p circud circud luci-app-circud
     # Resolve each selected package through the feed index instead of
     # assuming a package-category layout. Snapshot and release feeds differ
     # (libffi was repository base in one SDK and packages in another).
     for package_name in \
         script-utils zlib ca-certificates boost-json minizip libsqlite3 \
-        libffi libexpat libnghttp2 luci-base ucode-mod-socket \
+        libffi libexpat libnghttp2 ucode-mod-socket luci-base \
         circud luci-app-circud
     do
         source_makefile=$(awk -v name="$package_name" '
-            /^Package: / { package_name = substr($0, 10) }
-            /^Source-Makefile: / && package_name == name {
-                print substr($0, 18)
-                exit
+            /^Source-Makefile: / {
+                source_makefile = substr($0, 18)
+                next
+            }
+            /^Package: / {
+                package_name = substr($0, 10)
+                if (package_name == name && source_makefile != "") {
+                    print source_makefile
+                    exit
+                }
             }
         ' feeds/*.tmp/.packageinfo feeds/*.tmp/info/.packageinfo-* 2>/dev/null)
         if [ -z "$source_makefile" ] || [ ! -f "$source_makefile" ]; then
@@ -336,6 +356,7 @@ done
 mkdir -p "$output_dir"
 output_name="circud-luci-${channel}.${channel}"
 cp "$package" "$output_dir/$output_name"
+buildinfo=$output_dir/$output_name.buildinfo
 {
     printf 'openwrt_channel=%s\n' "$channel"
     printf 'openwrt_release=%s\n' "$release"
@@ -344,6 +365,6 @@ cp "$package" "$output_dir/$output_name"
     printf 'openwrt_subtarget=%s\n' "$sdk_subtarget"
     printf 'openwrt_sdk=%s\n' "$sdk_name"
     printf 'openwrt_sdk_sha256=%s\n' "$sdk_sha256"
-} > "$output_dir/$output_name.buildinfo"
+} > "$buildinfo"
 
 printf '[circud-luci] %s/%s\n' "$output_dir" "$output_name"
