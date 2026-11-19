@@ -63,6 +63,14 @@ do
     grep -Fq 'invocation_dir=$(pwd -P)' "$build_script"
     grep -Fq '/*) ;;' "$build_script"
     grep -Fq '*) output_dir=$invocation_dir/$output_dir ;;' "$build_script"
+    grep -Fq 'release_series=24.10' "$build_script"
+    grep -Fq 'release_series=25.12' "$build_script"
+    grep -Fq 'sdk_base="https://downloads.openwrt.org/releases/$release/targets/$sdk_target/$sdk_subtarget"' \
+        "$build_script"
+    if grep -Fq 'downloads.openwrt.org/snapshots/' "$build_script"; then
+        printf 'OpenWrt packages must not be built from snapshot SDKs\n' >&2
+        exit 1
+    fi
 done
 grep -Fq '[ -f feeds.conf ] || cp feeds.conf.default feeds.conf' \
     "$source_root/scripts/build-openwrt.sh"
@@ -106,6 +114,14 @@ grep -Fq 'gzip -t "$package"' "$workflow"
 grep -Fq 'gzip -dc "$package" > "$work/outer.tar"' "$workflow"
 grep -Fq 'verify_payload_root' "$source_root/scripts/build-openwrt.sh"
 grep -Fq 'verify_payload_root' "$source_root/scripts/build-luci-openwrt.sh"
+grep -Fq 'cannot determine the SDK Boost version from feed metadata' \
+    "$source_root/scripts/build-openwrt.sh"
+grep -Fq 'package_name == "boost-json" && /^Version: /' \
+    "$source_root/scripts/build-openwrt.sh"
+grep -Fq 'sub(/-r[0-9]+$/, "", version)' \
+    "$source_root/scripts/build-openwrt.sh"
+grep -Fq 'package payload does not require the SDK Boost ABI' \
+    "$source_root/scripts/build-openwrt.sh"
 grep -Fq 'name: circud-openwrt-${{ matrix.channel }}-${{ matrix.arch }}-${{ matrix.target }}-${{ matrix.subtarget }}' "$workflow"
 
 # luci-app-circud depends on circud, so the LuCI job must prepare the same

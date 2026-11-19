@@ -50,27 +50,27 @@ for command_name in curl sha256sum tar make; do
     }
 done
 
-release=24.10
-if [ "$channel" = ipk ]; then
-    listing=$(curl --fail --location --show-error --silent --retry 3 --retry-all-errors \
-        https://downloads.openwrt.org/releases/)
-    release=$(printf '%s\n' "$listing" \
-        | sed -n 's/.*href="\(24\.10\.[0-9][0-9]*\)\/".*/\1/p' \
-        | sort -t. -k3,3n | tail -n 1)
-    [ -n "$release" ] || {
-        printf 'no published OpenWrt 24.10 release found\n' >&2
-        exit 1
-    }
+# Both package channels are built from stable releases. A rolling snapshot SDK
+# can use a newer Boost ABI than the matching stable package feed on the target
+# system, producing a package that installs but cannot start.
+release_series=24.10
+if [ "$channel" = apk ]; then
+    release_series=25.12
 fi
+listing=$(curl --fail --location --show-error --silent --retry 3 --retry-all-errors \
+    https://downloads.openwrt.org/releases/)
+release=$(printf '%s\n' "$listing" \
+    | sed -n "s/.*href=\"\\($release_series\\.[0-9][0-9]*\\)\\/\".*/\\1/p" \
+    | sort -t. -k3,3n | tail -n 1)
+[ -n "$release" ] || {
+    printf 'no published OpenWrt %s release found\n' "$release_series" >&2
+    exit 1
+}
 
 work=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/circud-openwrt.XXXXXX")
 trap 'rm -rf -- "$work"' EXIT HUP INT TERM
 
-if [ "$channel" = ipk ]; then
-    sdk_base="https://downloads.openwrt.org/releases/$release/targets/$sdk_target/$sdk_subtarget"
-else
-    sdk_base="https://downloads.openwrt.org/snapshots/targets/$sdk_target/$sdk_subtarget"
-fi
+sdk_base="https://downloads.openwrt.org/releases/$release/targets/$sdk_target/$sdk_subtarget"
 curl_args='--fail --location --show-error --silent --retry 3 --retry-all-errors'
 # shellcheck disable=SC2086
 curl $curl_args "$sdk_base/sha256sums" -o "$work/sha256sums"
@@ -417,6 +417,34 @@ done
     printf 'package payload has non-executable usr/bin/circud\n' >&2
     exit 1
 }
+
+if command -v readelf >/dev/null 2>&1; then
+    boost_version=$(awk '
+        /^Package: / {
+            package_name = substr($0, 10)
+            next
+        }
+        package_name == "boost-json" && /^Version: / {
+            version = substr($0, 10)
+            sub(/-r[0-9]+$/, "", version)
+            print version
+            exit
+        }
+    ' "$sdk_dir"/feeds/[!.]*.tmp/.packageinfo 2>/dev/null)
+    [ -n "$boost_version" ] || {
+        printf 'cannot determine the SDK Boost version from feed metadata\n' >&2
+        exit 1
+    }
+    readelf -d "$verify_payload_root/usr/bin/circud" > "$work/circud.dynamic"
+    for library in libboost_json libboost_container; do
+        if ! grep -Fq "$library.so.$boost_version" "$work/circud.dynamic"; then
+            printf 'package payload does not require the SDK Boost ABI %s:\n' \
+                "$boost_version" >&2
+            grep -F "$library.so." "$work/circud.dynamic" >&2 || true
+            exit 1
+        fi
+    done
+fi
 
 mkdir -p "$output_dir"
 output_name="circud-openwrt-${channel}-${expected_arch}-${sdk_target}-${sdk_subtarget}.${channel}"

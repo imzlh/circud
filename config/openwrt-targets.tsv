@@ -1,7 +1,7 @@
 # formats<TAB>target<TAB>subtarget<TAB>ARCH_PACKAGES
 # This table is kept in the same order and shape as cno-builds, with the
 # non-OpenWrt metadata fields omitted. "ipk" is OpenWrt 24.10 and "apk" is
-# the current snapshot channel.
+# OpenWrt 25.12. Both channels use stable SDKs and package feeds.
 #
 # Keep duplicate ARCH_PACKAGES rows when their SDK CPU tuning differs. For
 # example, ramips/mt7620 and ramips/mt7621 both publish mipsel_24kc, but the

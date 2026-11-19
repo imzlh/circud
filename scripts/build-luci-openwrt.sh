@@ -31,23 +31,25 @@ for command_name in curl sha256sum tar make; do
     }
 done
 
-release=24.10
-if [ "$channel" = ipk ]; then
-    listing=$(curl --fail --location --show-error --silent --retry 3 --retry-all-errors \
-        https://downloads.openwrt.org/releases/)
-    release=$(printf '%s\n' "$listing" |
-        sed -n 's/.*href="\(24\.10\.[0-9][0-9]*\)\/".*/\1/p' |
-        sort -t. -k3,3n | tail -n 1)
-    [ -n "$release" ] || { printf 'no OpenWrt 24.10 release found\n' >&2; exit 1; }
+# Keep both package channels on stable releases so the SDK and the target's
+# package feed share the same runtime ABI.
+release_series=24.10
+if [ "$channel" = apk ]; then
+    release_series=25.12
 fi
+listing=$(curl --fail --location --show-error --silent --retry 3 --retry-all-errors \
+    https://downloads.openwrt.org/releases/)
+release=$(printf '%s\n' "$listing" |
+    sed -n "s/.*href=\"\\($release_series\\.[0-9][0-9]*\\)\\/\".*/\\1/p" |
+    sort -t. -k3,3n | tail -n 1)
+[ -n "$release" ] || {
+    printf 'no published OpenWrt %s release found\n' "$release_series" >&2
+    exit 1
+}
 
 work=$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/circud-luci.XXXXXX")
 trap 'rm -rf -- "$work"' EXIT HUP INT TERM
-if [ "$channel" = ipk ]; then
-    sdk_base="https://downloads.openwrt.org/releases/$release/targets/$sdk_target/$sdk_subtarget"
-else
-    sdk_base="https://downloads.openwrt.org/snapshots/targets/$sdk_target/$sdk_subtarget"
-fi
+sdk_base="https://downloads.openwrt.org/releases/$release/targets/$sdk_target/$sdk_subtarget"
 curl_args='--fail --location --show-error --silent --retry 3 --retry-all-errors'
 # shellcheck disable=SC2086
 curl $curl_args "$sdk_base/sha256sums" -o "$work/sha256sums"

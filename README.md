@@ -30,8 +30,9 @@ The `OpenWrt packages` GitHub Actions workflow builds `circud` and its optional
 the SDK's `ARCH_PACKAGES` values, such as `aarch64_cortex-a53`,
 `arm_cortex-a5_vfpv4`, `i386_pentium4`, `mips_24kc` and `riscv64_generic`.
 The matrix covers x86-64, 32-bit x86, generic and board-specific AArch64,
-ARMv5/v6/v7, both MIPS byte orders and RISC-V. Every target is built for
-OpenWrt 24.10 (`.ipk`) and the current snapshot (`.apk`) where published.
+ARMv5/v6/v7, both MIPS byte orders and RISC-V. Every target is built from a
+stable OpenWrt SDK: 24.10 for `.ipk` and 25.12 for `.apk`, using the latest
+published patch release in each series.
 
 The architecture lists are
 [`config/openwrt-targets.tsv`](config/openwrt-targets.tsv), a single table
